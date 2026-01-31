@@ -1,0 +1,153 @@
+import { useState } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext';
+import Input from '../components/Input';
+import Button from '../components/Button';
+import Card from '../components/Card';
+
+const Login = () => {
+    const [formData, setFormData] = useState({ email: '', password: '' });
+    const [errors, setErrors] = useState({});
+    const [loading, setLoading] = useState(false);
+    const [apiError, setApiError] = useState('');
+
+    const { login } = useAuth();
+    const navigate = useNavigate();
+    const location = useLocation();
+
+    const from = location.state?.from?.pathname || '/dashboard';
+
+    const handleChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+        // Clear error when user starts typing
+        if (errors[name]) {
+            setErrors(prev => ({ ...prev, [name]: '' }));
+        }
+        setApiError('');
+    };
+
+    const validate = () => {
+        const newErrors = {};
+
+        if (!formData.email) {
+            newErrors.email = 'Email is required';
+        } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+            newErrors.email = 'Email is invalid';
+        }
+
+        if (!formData.password) {
+            newErrors.password = 'Password is required';
+        }
+
+        setErrors(newErrors);
+        return Object.keys(newErrors).length === 0;
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setApiError('');
+
+        if (!validate()) return;
+
+        setLoading(true);
+
+        try {
+            await login(formData.email, formData.password);
+            navigate(from, { replace: true });
+        } catch (error) {
+            const message = error.response?.data?.error || error.response?.data?.message || 'Login failed. Please try again.';
+            setApiError(message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 via-white to-secondary-50 px-4 py-12">
+            <div className="w-full max-w-md animate-slide-up">
+                <div className="text-center mb-8">
+                    <Link to="/" className="inline-flex items-center gap-2 mb-6 group">
+                        <div className="w-12 h-12 bg-gradient-to-br from-primary-600 to-secondary-600 rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform">
+                            <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                            </svg>
+                        </div>
+                        <span className="text-2xl font-bold bg-gradient-to-r from-primary-600 to-secondary-600 bg-clip-text text-transparent">
+                            CinBrainLinks
+                        </span>
+                    </Link>
+                    <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome back</h1>
+                    <p className="text-gray-600">Sign in to your account to continue</p>
+                </div>
+
+                <Card>
+                    <form onSubmit={handleSubmit} className="space-y-5">
+                        {apiError && (
+                            <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3 animate-fade-in">
+                                <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                </svg>
+                                <p className="text-sm text-red-800">{apiError}</p>
+                            </div>
+                        )}
+
+                        <Input
+                            label="Email"
+                            type="email"
+                            name="email"
+                            value={formData.email}
+                            onChange={handleChange}
+                            placeholder="you@example.com"
+                            error={errors.email}
+                            required
+                            icon={
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
+                                </svg>
+                            }
+                        />
+
+                        <Input
+                            label="Password"
+                            type="password"
+                            name="password"
+                            value={formData.password}
+                            onChange={handleChange}
+                            placeholder="••••••••"
+                            error={errors.password}
+                            required
+                        />
+
+                        <div className="flex items-center justify-end">
+                            <Link to="/forgot-password" className="text-sm font-medium text-primary-600 hover:text-primary-700 transition-colors">
+                                Forgot password?
+                            </Link>
+                        </div>
+
+                        <Button
+                            type="submit"
+                            variant="primary"
+                            fullWidth
+                            loading={loading}
+                            disabled={loading}
+                        >
+                            Sign In
+                        </Button>
+                    </form>
+
+                    <div className="mt-6 text-center">
+                        <p className="text-sm text-gray-600">
+                            Don't have an account?{' '}
+                            <Link to="/register" className="font-medium text-primary-600 hover:text-primary-700 transition-colors">
+                                Sign up
+                            </Link>
+                        </p>
+                    </div>
+                </Card>
+            </div>
+        </div>
+    );
+};
+
+export default Login;
