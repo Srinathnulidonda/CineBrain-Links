@@ -1,299 +1,339 @@
 # server/app/services/redis_service.py
 
-"""
-Redis service for caching and token management.
-Compatible with Railway Redis and Upstash.
-"""
-
 import json
 import logging
 from datetime import datetime
-from typing import Optional
-from urllib.parse import urlparse
+from typing import Optional, List, Dict, Any
 
 import redis
 from flask import current_app
 
 logger = logging.getLogger(__name__)
 
+KEY_PREFIX = "savlink"
+
 
 class RedisService:
-    """Service for Redis operations - caching and JWT blacklist."""
-    
-    _instance: Optional[redis.Redis] = None
-    _connection_attempted: bool = False
-    
+    _client: Optional[redis.Redis] = None
+    _initialized: bool = False
+
     def __init__(self):
-        """Initialize Redis connection."""
-        if not RedisService._connection_attempted:
+        if not RedisService._initialized:
             self._connect()
-        self.client = RedisService._instance
-    
+        self.client = RedisService._client
+
     def _connect(self) -> None:
-        """Establish Redis connection with Railway/Upstash compatibility."""
-        RedisService._connection_attempted = True
-        
+        RedisService._initialized = True
+
         redis_url = current_app.config.get("REDIS_URL")
-        
+
         if not redis_url:
-            logger.warning("⚠️ Redis URL not configured - running without cache")
+            logger.info("Redis not configured, using memory fallback")
             return
-        
+
         try:
-            # Upstash requires SSL - ensure rediss:// scheme
             if "upstash.io" in redis_url and redis_url.startswith("redis://"):
                 redis_url = redis_url.replace("redis://", "rediss://", 1)
-                logger.info("Converted Upstash URL to use SSL (rediss://)")
-            
-            connection_kwargs = {
-                "decode_responses": True,
-                "socket_timeout": 10,
-                "socket_connect_timeout": 10,
-                "retry_on_timeout": True,
-                "health_check_interval": 30,
-            }
-            
-            RedisService._instance = redis.from_url(
+
+            RedisService._client = redis.from_url(
                 redis_url,
-                **connection_kwargs
+                decode_responses=True,
+                socket_timeout=10,
+                socket_connect_timeout=10,
+                retry_on_timeout=True,
+                health_check_interval=30
             )
-            
-            # Test connection
-            RedisService._instance.ping()
-            logger.info("✅ Redis connection established successfully")
-            
-        except redis.ConnectionError as e:
-            logger.warning(f"⚠️ Redis connection failed: {e}")
-            RedisService._instance = None
+
+            RedisService._client.ping()
+            logger.info("Redis connected")
+
         except Exception as e:
-            logger.warning(f"⚠️ Redis initialization error: {e}")
-            RedisService._instance = None
-    
-    def _is_available(self) -> bool:
-        """Check if Redis is available."""
-        return self.client is not None
-    
-    # ==================== LINK CACHING ====================
-    
-    def cache_link(self, slug: str, link_data: dict, ttl: Optional[int] = None) -> bool:
-        """Cache link data for fast redirect lookups."""
-        if not self._is_available():
+            logger.warning(f"Redis connection failed: {e}")
+            RedisService._client = None
+
+    def _available(self) -> bool:
+        if self.client is None:
             return False
-            
         try:
-            if ttl is None:
-                ttl = current_app.config.get("CACHE_TTL_LINK", 3600)
-            
-            key = f"cinbrainlinks:link:{slug}"
-            self.client.setex(key, ttl, json.dumps(link_data))
-            logger.debug(f"Cached link: {slug}")
+            self.client.ping()
             return True
-            
-        except redis.RedisError as e:
-            logger.error(f"Failed to cache link {slug}: {e}")
+        except Exception:
             return False
-    
+
+    def _key(self, *parts) -> str:
+        return f"{KEY_PREFIX}:{':'.join(str(p) for p in parts)}"
+
+    def cache_link(self, slug: str, data: dict, ttl: int = None) -> bool:
+        if not self._available():
+            return False
+
+        try:
+            ttl = ttl or current_app.config.get("CACHE_TTL_LINK", 3600)
+            self.client.setex(self._key("link", slug), ttl, json.dumps(data))
+            return True
+        except Exception as e:
+            logger.debug(f"Cache write failed: {e}")
+            return False
+
     def get_cached_link(self, slug: str) -> Optional[dict]:
-        """Retrieve cached link data."""
-        if not self._is_available():
+        if not self._available():
             return None
-            
+
         try:
-            key = f"cinbrainlinks:link:{slug}"
-            data = self.client.get(key)
-            
-            if data:
-                link_data = json.loads(data)
-                
-                # Check if link has expired
-                if link_data.get("expires_at"):
-                    expires_at = datetime.fromisoformat(link_data["expires_at"])
-                    if datetime.utcnow() > expires_at:
-                        self.invalidate_link_cache(slug)
-                        return None
-                
-                logger.debug(f"Cache hit for link: {slug}")
-                return link_data
-            
-            logger.debug(f"Cache miss for link: {slug}")
+            data = self.client.get(self._key("link", slug))
+            return json.loads(data) if data else None
+        except Exception:
             return None
-            
-        except redis.RedisError as e:
-            logger.error(f"Failed to get cached link {slug}: {e}")
-            return None
-    
+
     def invalidate_link_cache(self, slug: str) -> bool:
-        """Remove link from cache."""
-        if not self._is_available():
+        if not self._available():
             return False
-            
+
         try:
-            key = f"cinbrainlinks:link:{slug}"
-            self.client.delete(key)
-            logger.debug(f"Invalidated cache for link: {slug}")
+            self.client.delete(self._key("link", slug))
             return True
-            
-        except redis.RedisError as e:
-            logger.error(f"Failed to invalidate cache for {slug}: {e}")
+        except Exception:
             return False
-    
-    # ==================== CLICK COUNTING ====================
-    
-    def queue_click_increment(self, slug: str) -> bool:
-        """Queue click increment for async processing."""
-        if not self._is_available():
+
+    def blacklist_token(self, jti: str, ttl: int = None) -> bool:
+        if not self._available():
             return False
-            
+
         try:
-            self.client.rpush("cinbrainlinks:click_queue", slug)
+            ttl = ttl or current_app.config.get("CACHE_TTL_BLACKLIST", 86400 * 31)
+            self.client.setex(self._key("blacklist", jti), ttl, "1")
             return True
-        except redis.RedisError as e:
-            logger.error(f"Failed to queue click for {slug}: {e}")
+        except Exception:
             return False
-    
-    def get_pending_clicks(self, batch_size: int = 100) -> list:
-        """Get pending clicks from the queue."""
-        if not self._is_available():
-            return []
-            
-        try:
-            clicks = []
-            for _ in range(batch_size):
-                slug = self.client.lpop("cinbrainlinks:click_queue")
-                if slug is None:
-                    break
-                clicks.append(slug)
-            return clicks
-        except redis.RedisError as e:
-            logger.error(f"Failed to get pending clicks: {e}")
-            return []
-    
-    # ==================== JWT BLACKLIST ====================
-    
-    def blacklist_token(self, jti: str, ttl: Optional[int] = None) -> bool:
-        """Add JWT token to blacklist."""
-        if not self._is_available():
-            logger.debug(f"Redis unavailable - token blacklist disabled")
-            return False
-            
-        try:
-            if ttl is None:
-                ttl = current_app.config.get("CACHE_TTL_BLACKLIST", 86400 * 31)
-            
-            key = f"cinbrainlinks:blacklist:{jti}"
-            self.client.setex(key, ttl, "1")
-            logger.debug(f"Token blacklisted: {jti[:8]}...")
-            return True
-            
-        except redis.RedisError as e:
-            logger.error(f"Failed to blacklist token: {e}")
-            return False
-    
+
     def is_token_blacklisted(self, jti: str) -> bool:
-        """Check if JWT token is blacklisted."""
-        if not self._is_available():
+        if not self._available():
             return False
-            
+
         try:
-            key = f"cinbrainlinks:blacklist:{jti}"
-            return self.client.exists(key) > 0
-        except redis.RedisError as e:
-            logger.error(f"Failed to check token blacklist: {e}")
+            return self.client.exists(self._key("blacklist", jti)) > 0
+        except Exception:
             return False
-    
-    # ==================== PASSWORD RESET ====================
-    
-    def store_reset_token(self, token: str, user_id: str, ttl: Optional[int] = None) -> bool:
-        """Store password reset token."""
-        if not self._is_available():
-            logger.debug("Redis unavailable - password reset tokens not cached")
+
+    def store_reset_token(self, token: str, user_id: str, ttl: int = None) -> bool:
+        if not self._available():
+            logger.warning("Redis unavailable for reset token storage")
             return False
-            
+
         try:
-            if ttl is None:
-                ttl = current_app.config.get("PASSWORD_RESET_TOKEN_EXPIRES", 3600)
-            
-            key = f"cinbrainlinks:reset:{token}"
-            self.client.setex(key, ttl, user_id)
+            ttl = ttl or current_app.config.get("PASSWORD_RESET_TOKEN_EXPIRES", 3600)
+            self.client.setex(self._key("reset", token), ttl, user_id)
             return True
-            
-        except redis.RedisError as e:
+        except Exception as e:
             logger.error(f"Failed to store reset token: {e}")
             return False
-    
+
     def get_reset_token_user(self, token: str) -> Optional[str]:
-        """Get user ID associated with reset token."""
-        if not self._is_available():
+        if not self._available():
             return None
-            
+
         try:
-            key = f"cinbrainlinks:reset:{token}"
-            user_id = self.client.get(key)
-            return user_id
-        except redis.RedisError as e:
-            logger.error(f"Failed to get reset token: {e}")
+            return self.client.get(self._key("reset", token))
+        except Exception:
             return None
-    
+
     def invalidate_reset_token(self, token: str) -> bool:
-        """Invalidate password reset token."""
-        if not self._is_available():
+        if not self._available():
             return False
-            
+
         try:
-            key = f"cinbrainlinks:reset:{token}"
-            self.client.delete(key)
+            self.client.delete(self._key("reset", token))
             return True
-        except redis.RedisError as e:
-            logger.error(f"Failed to invalidate reset token: {e}")
+        except Exception:
             return False
-    
-    # ==================== RATE LIMITING ====================
-    
-    def check_rate_limit(self, key: str, limit: int, window: int) -> tuple:
-        """Check and update rate limit."""
-        if not self._is_available():
-            return True, limit
-            
+
+    def cache_user_stats(self, user_id: str, stats: dict, ttl: int = 300) -> bool:
+        if not self._available():
+            return False
+
         try:
-            rate_key = f"cinbrainlinks:rate:{key}"
-            current = self.client.get(rate_key)
-            
+            self.client.setex(
+                self._key("stats", user_id),
+                ttl,
+                json.dumps(stats)
+            )
+            return True
+        except Exception:
+            return False
+
+    def get_cached_user_stats(self, user_id: str) -> Optional[dict]:
+        if not self._available():
+            return None
+
+        try:
+            data = self.client.get(self._key("stats", user_id))
+            return json.loads(data) if data else None
+        except Exception:
+            return None
+
+    def invalidate_user_stats(self, user_id: str) -> bool:
+        if not self._available():
+            return False
+
+        try:
+            self.client.delete(self._key("stats", user_id))
+            return True
+        except Exception:
+            return False
+
+    def increment_click_counter(self, slug: str) -> int:
+        if not self._available():
+            return 0
+
+        try:
+            key = self._key("clicks", slug, datetime.utcnow().strftime("%Y-%m-%d"))
+            count = self.client.incr(key)
+            self.client.expire(key, 86400 * 7)
+            return count
+        except Exception:
+            return 0
+
+    def get_click_counts(self, slug: str, days: int = 7) -> Dict[str, int]:
+        if not self._available():
+            return {}
+
+        try:
+            result = {}
+            for i in range(days):
+                from datetime import timedelta
+                date = (datetime.utcnow() - timedelta(days=i)).strftime("%Y-%m-%d")
+                key = self._key("clicks", slug, date)
+                count = self.client.get(key)
+                result[date] = int(count) if count else 0
+            return result
+        except Exception:
+            return {}
+
+    def cache_metadata(self, url_hash: str, metadata: dict, ttl: int = 86400) -> bool:
+        if not self._available():
+            return False
+
+        try:
+            self.client.setex(
+                self._key("metadata", url_hash),
+                ttl,
+                json.dumps(metadata)
+            )
+            return True
+        except Exception:
+            return False
+
+    def get_cached_metadata(self, url_hash: str) -> Optional[dict]:
+        if not self._available():
+            return None
+
+        try:
+            data = self.client.get(self._key("metadata", url_hash))
+            return json.loads(data) if data else None
+        except Exception:
+            return None
+
+    def cache_health_status(self, link_id: str, status: dict, ttl: int = 3600) -> bool:
+        if not self._available():
+            return False
+
+        try:
+            self.client.setex(
+                self._key("health", link_id),
+                ttl,
+                json.dumps(status)
+            )
+            return True
+        except Exception:
+            return False
+
+    def get_cached_health_status(self, link_id: str) -> Optional[dict]:
+        if not self._available():
+            return None
+
+        try:
+            data = self.client.get(self._key("health", link_id))
+            return json.loads(data) if data else None
+        except Exception:
+            return None
+
+    def add_to_set(self, set_name: str, value: str) -> bool:
+        if not self._available():
+            return False
+
+        try:
+            self.client.sadd(self._key("set", set_name), value)
+            return True
+        except Exception:
+            return False
+
+    def is_in_set(self, set_name: str, value: str) -> bool:
+        if not self._available():
+            return False
+
+        try:
+            return self.client.sismember(self._key("set", set_name), value)
+        except Exception:
+            return False
+
+    def remove_from_set(self, set_name: str, value: str) -> bool:
+        if not self._available():
+            return False
+
+        try:
+            self.client.srem(self._key("set", set_name), value)
+            return True
+        except Exception:
+            return False
+
+    def rate_limit_check(self, identifier: str, limit: int, window: int = 60) -> tuple:
+        if not self._available():
+            return True, limit
+
+        try:
+            key = self._key("ratelimit", identifier)
+            current = self.client.get(key)
+
             if current is None:
-                self.client.setex(rate_key, window, 1)
+                self.client.setex(key, window, 1)
                 return True, limit - 1
-            
+
             current = int(current)
             if current >= limit:
+                ttl = self.client.ttl(key)
                 return False, 0
-            
-            self.client.incr(rate_key)
+
+            self.client.incr(key)
             return True, limit - current - 1
-            
-        except redis.RedisError as e:
-            logger.error(f"Rate limit check failed: {e}")
+
+        except Exception:
             return True, limit
-    
-    # ==================== STATS ====================
-    
+
     def get_stats(self) -> dict:
-        """Get Redis service statistics."""
-        stats = {
-            "available": self._is_available(),
-            "connected": False
-        }
-        
-        if self._is_available():
+        stats = {"available": self._available()}
+
+        if stats["available"]:
             try:
-                self.client.ping()
-                stats["connected"] = True
-                
-                stats["click_queue_size"] = self.client.llen("cinbrainlinks:click_queue")
-                stats["email_queue_size"] = self.client.llen("cinbrainlinks:email_queue")
-                
-                link_keys = self.client.keys("cinbrainlinks:link:*")
-                stats["cached_links"] = len(link_keys)
-                
-            except Exception as e:
-                stats["error"] = str(e)
-        
+                info = self.client.info("memory")
+                stats["memory_used"] = info.get("used_memory_human", "unknown")
+                stats["cached_links"] = len(self.client.keys(self._key("link", "*")))
+                stats["email_queue"] = self.client.llen(self._key("email_queue"))
+            except Exception:
+                pass
+
         return stats
+
+    def flush_user_cache(self, user_id: str) -> bool:
+        if not self._available():
+            return False
+
+        try:
+            pattern = self._key("*", user_id, "*")
+            keys = self.client.keys(pattern)
+            if keys:
+                self.client.delete(*keys)
+
+            self.invalidate_user_stats(user_id)
+            return True
+        except Exception:
+            return False

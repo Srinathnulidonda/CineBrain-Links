@@ -1,14 +1,10 @@
 # server/app/routes/auth.py
 
-"""
-Authentication routes.
-Handles user registration, login, logout, and password reset.
-"""
-
 import secrets
-from datetime import datetime, timedelta
+import logging
+from datetime import datetime
 
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, current_app
 from flask_jwt_extended import (
     create_access_token,
     create_refresh_token,
@@ -24,427 +20,286 @@ from app.services.email_service import get_email_service
 from app.utils.validators import InputValidator
 
 auth_bp = Blueprint("auth", __name__)
+logger = logging.getLogger(__name__)
 
 
-def get_request_info() -> dict:
-    """Extract request information for logging and emails."""
-    ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
-    if ip_address:
-        ip_address = ip_address.split(',')[0].strip()
+def api_response():
+    return current_app.api_response
+
+
+def get_client_info() -> dict:
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    if ip:
+        ip = ip.split(',')[0].strip()
     
-    user_agent = request.headers.get('User-Agent', 'Unknown')
+    ua = request.headers.get('User-Agent', '')
     
-    # Detect device type
-    device = "Unknown device"
-    if 'Mobile' in user_agent or 'Android' in user_agent:
-        device = "Mobile device"
-    elif 'iPad' in user_agent or 'Tablet' in user_agent:
+    if 'Mobile' in ua or 'Android' in ua:
+        device = "Mobile"
+    elif 'iPad' in ua or 'Tablet' in ua:
         device = "Tablet"
-    elif 'Windows' in user_agent:
-        device = "Windows PC"
-    elif 'Macintosh' in user_agent:
-        device = "Mac"
-    elif 'Linux' in user_agent:
-        device = "Linux PC"
+    else:
+        device = "Desktop"
     
-    # Detect browser
-    browser = ""
-    if 'Chrome' in user_agent and 'Edg' not in user_agent:
-        browser = "Chrome"
-    elif 'Firefox' in user_agent:
-        browser = "Firefox"
-    elif 'Safari' in user_agent and 'Chrome' not in user_agent:
-        browser = "Safari"
-    elif 'Edg' in user_agent:
-        browser = "Edge"
-    
-    if browser:
-        device = f"{browser} on {device}"
-    
-    return {
-        'ip': ip_address,
-        'device': device,
-        'user_agent': user_agent
-    }
+    return {'ip': ip or 'unknown', 'device': device}
 
 
 @auth_bp.route("/register", methods=["POST"])
 @limiter.limit("5 per minute")
 def register():
-    """
-    Register a new user.
-    
-    Request body:
-        - email: User email address
-        - password: User password
-        - name: User name (optional)
-    
-    Returns:
-        User data and JWT tokens on success
-    """
-    data = request.get_json()
-    
-    if not data:
-        return jsonify({"error": "Request body is required"}), 400
+    data = request.get_json() or {}
     
     email = data.get("email", "").strip()
     password = data.get("password", "")
     name = data.get("name", "").strip()
     
-    # Validate email
     is_valid, normalized_email, error = InputValidator.validate_email(email)
     if not is_valid:
-        return jsonify({"error": error}), 400
+        return api_response().error(error, 400, "INVALID_EMAIL")
     
-    # Validate password
     is_valid, error = InputValidator.validate_password(password)
     if not is_valid:
-        return jsonify({"error": error}), 400
+        return api_response().error(error, 400, "INVALID_PASSWORD")
     
-    # Check if user already exists
-    existing_user = User.query.filter_by(email=normalized_email).first()
-    if existing_user:
-        return jsonify({"error": "Email already registered"}), 409
+    if User.query.filter_by(email=normalized_email).first():
+        return api_response().error("An account with this email already exists", 409, "EMAIL_EXISTS")
     
     try:
-        # Create new user
         user = User(email=normalized_email, password=password)
         db.session.add(user)
         db.session.commit()
         
-        # Generate tokens
+        logger.info(f"User registered: {user.id}")
+        
         access_token = create_access_token(identity=user.id)
         refresh_token = create_refresh_token(identity=user.id)
         
-        # Send welcome email (async)
         try:
             email_service = get_email_service()
-            user_name = name if name else normalized_email.split('@')[0].title()
+            user_name = name or normalized_email.split('@')[0].title()
             email_service.send_welcome_email(user.email, user_name=user_name)
         except Exception as e:
-            current_app.logger.error(f"Failed to send welcome email: {e}")
+            logger.warning(f"Welcome email failed: {e}")
         
-        return jsonify({
-            "message": "Registration successful",
-            "user": user.to_dict(),
-            "access_token": access_token,
-            "refresh_token": refresh_token
-        }), 201
+        return api_response().success(
+            data={
+                "user": user.to_dict(),
+                "access_token": access_token,
+                "refresh_token": refresh_token
+            },
+            message="Account created successfully",
+            status=201
+        )
         
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Registration error: {e}")
-        return jsonify({"error": "Registration failed"}), 500
+        logger.error(f"Registration failed: {e}")
+        return api_response().error("Registration failed. Please try again.", 500)
 
 
 @auth_bp.route("/login", methods=["POST"])
 @limiter.limit("10 per minute")
 def login():
-    """
-    Authenticate user and return JWT tokens.
-    
-    Request body:
-        - email: User email address
-        - password: User password
-    
-    Returns:
-        User data and JWT tokens on success
-    """
-    data = request.get_json()
-    
-    if not data:
-        return jsonify({"error": "Request body is required"}), 400
+    data = request.get_json() or {}
     
     email = data.get("email", "").strip().lower()
     password = data.get("password", "")
     
     if not email or not password:
-        return jsonify({"error": "Email and password are required"}), 400
+        return api_response().error("Email and password are required", 400)
     
-    # Find user
     user = User.query.filter_by(email=email).first()
     
     if not user or not user.check_password(password):
-        return jsonify({"error": "Invalid email or password"}), 401
+        logger.info(f"Failed login attempt for: {email[:3]}***")
+        return api_response().error("Invalid email or password", 401, "INVALID_CREDENTIALS")
     
     if not user.is_active:
-        return jsonify({"error": "Account is deactivated"}), 403
+        return api_response().error("This account has been deactivated", 403, "ACCOUNT_INACTIVE")
     
-    # Generate tokens
     access_token = create_access_token(identity=user.id)
     refresh_token = create_refresh_token(identity=user.id)
     
-    return jsonify({
-        "message": "Login successful",
-        "user": user.to_dict(),
-        "access_token": access_token,
-        "refresh_token": refresh_token
-    }), 200
+    logger.info(f"User logged in: {user.id}")
+    
+    return api_response().success(
+        data={
+            "user": user.to_dict(),
+            "access_token": access_token,
+            "refresh_token": refresh_token
+        },
+        message="Signed in successfully"
+    )
 
 
 @auth_bp.route("/logout", methods=["POST"])
 @jwt_required()
 def logout():
-    """
-    Logout user by blacklisting their JWT token.
-    
-    Returns:
-        Success message
-    """
     try:
         jwt_data = get_jwt()
         jti = jwt_data["jti"]
         exp = jwt_data["exp"]
         
-        # Calculate TTL for blacklist entry
-        now = datetime.utcnow().timestamp()
-        ttl = int(exp - now)
+        ttl = max(int(exp - datetime.utcnow().timestamp()), 0)
         
-        # Blacklist the token
         redis_service = RedisService()
         redis_service.blacklist_token(jti, ttl)
         
-        return jsonify({"message": "Logout successful"}), 200
+        logger.info(f"User logged out: {get_jwt_identity()}")
+        
+        return api_response().success(message="Signed out successfully")
         
     except Exception as e:
-        current_app.logger.error(f"Logout error: {e}")
-        return jsonify({"error": "Logout failed"}), 500
+        logger.error(f"Logout error: {e}")
+        return api_response().error("Sign out failed", 500)
 
 
 @auth_bp.route("/refresh", methods=["POST"])
 @jwt_required(refresh=True)
 def refresh():
-    """
-    Refresh access token using refresh token.
-    
-    Returns:
-        New access token
-    """
     try:
         user_id = get_jwt_identity()
-        
-        # Verify user still exists and is active
         user = User.query.get(user_id)
-        if not user or not user.is_active:
-            return jsonify({"error": "User not found or inactive"}), 401
         
-        # Generate new access token
+        if not user or not user.is_active:
+            return api_response().error("Session invalid", 401, "INVALID_SESSION")
+        
         access_token = create_access_token(identity=user_id)
         
-        return jsonify({
-            "access_token": access_token
-        }), 200
+        return api_response().success(data={"access_token": access_token})
         
     except Exception as e:
-        current_app.logger.error(f"Token refresh error: {e}")
-        return jsonify({"error": "Token refresh failed"}), 500
+        logger.error(f"Token refresh error: {e}")
+        return api_response().error("Token refresh failed", 500)
 
 
 @auth_bp.route("/me", methods=["GET"])
 @jwt_required()
 def get_current_user():
-    """
-    Get current authenticated user's profile.
+    user = User.query.get(get_jwt_identity())
     
-    Returns:
-        User data
-    """
-    try:
-        user_id = get_jwt_identity()
-        user = User.query.get(user_id)
-        
-        if not user:
-            return jsonify({"error": "User not found"}), 404
-        
-        return jsonify({"user": user.to_dict()}), 200
-        
-    except Exception as e:
-        current_app.logger.error(f"Get user error: {e}")
-        return jsonify({"error": "Failed to get user data"}), 500
+    if not user:
+        return api_response().error("User not found", 404)
+    
+    return api_response().success(data={"user": user.to_dict()})
 
 
 @auth_bp.route("/password/forgot", methods=["POST"])
 @limiter.limit("3 per minute")
 def forgot_password():
-    """
-    Request password reset email.
-    
-    Request body:
-        - email: User email address
-    
-    Returns:
-        Success message (always returns success to prevent email enumeration)
-    """
-    data = request.get_json()
-    
-    if not data:
-        return jsonify({"error": "Request body is required"}), 400
-    
+    data = request.get_json() or {}
     email = data.get("email", "").strip().lower()
     
     if not email:
-        return jsonify({"error": "Email is required"}), 400
+        return api_response().error("Email is required", 400)
     
-    # Always return success to prevent email enumeration
-    success_response = jsonify({
-        "message": "If an account exists with this email, a password reset link will be sent."
-    }), 200
+    success_msg = "If an account exists with this email, you will receive a password reset link."
     
-    # Find user
     user = User.query.filter_by(email=email).first()
-    
     if not user:
-        return success_response
+        return api_response().success(message=success_msg)
     
     try:
-        # Generate reset token
         reset_token = secrets.token_urlsafe(32)
         
-        # Store token in Redis
         redis_service = RedisService()
         redis_service.store_reset_token(reset_token, user.id)
         
-        # Get request info for email
-        request_info = get_request_info()
+        client_info = get_client_info()
         
-        # Send reset email with request info
         email_service = get_email_service()
-        user_name = email.split('@')[0].title()
         email_service.send_password_reset_email(
             to_email=user.email,
             reset_token=reset_token,
-            user_name=user_name,
-            request_info=request_info
+            user_name=user.email.split('@')[0].title(),
+            request_info=client_info
         )
         
+        logger.info(f"Password reset requested for user: {user.id}")
+        
     except Exception as e:
-        current_app.logger.error(f"Password reset request error: {e}")
+        logger.error(f"Password reset request error: {e}")
     
-    return success_response
+    return api_response().success(message=success_msg)
 
 
 @auth_bp.route("/password/reset", methods=["POST"])
 @limiter.limit("5 per minute")
 def reset_password():
-    """
-    Reset password using token.
-    
-    Request body:
-        - token: Password reset token
-        - password: New password
-    
-    Returns:
-        Success message
-    """
-    data = request.get_json()
-    
-    if not data:
-        return jsonify({"error": "Request body is required"}), 400
+    data = request.get_json() or {}
     
     token = data.get("token", "").strip()
     new_password = data.get("password", "")
     
     if not token:
-        return jsonify({"error": "Reset token is required"}), 400
+        return api_response().error("Reset token is required", 400)
     
-    # Validate password
     is_valid, error = InputValidator.validate_password(new_password)
     if not is_valid:
-        return jsonify({"error": error}), 400
+        return api_response().error(error, 400, "INVALID_PASSWORD")
     
     try:
-        # Get user ID from token
         redis_service = RedisService()
         user_id = redis_service.get_reset_token_user(token)
         
         if not user_id:
-            return jsonify({"error": "Invalid or expired reset token"}), 400
+            return api_response().error(
+                "This reset link is invalid or has expired. Please request a new one.",
+                400,
+                "INVALID_TOKEN"
+            )
         
-        # Find user
         user = User.query.get(user_id)
         if not user:
-            return jsonify({"error": "User not found"}), 404
+            return api_response().error("Account not found", 404)
         
-        # Update password
         user.set_password(new_password)
         db.session.commit()
         
-        # Invalidate the reset token
         redis_service.invalidate_reset_token(token)
         
-        return jsonify({"message": "Password reset successful"}), 200
+        logger.info(f"Password reset completed for user: {user.id}")
+        
+        return api_response().success(message="Password updated successfully")
         
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Password reset error: {e}")
-        return jsonify({"error": "Password reset failed"}), 500
+        logger.error(f"Password reset error: {e}")
+        return api_response().error("Password reset failed", 500)
 
 
 @auth_bp.route("/password/change", methods=["POST"])
 @jwt_required()
 def change_password():
-    """
-    Change password for authenticated user.
-    
-    Request body:
-        - current_password: Current password
-        - new_password: New password
-    
-    Returns:
-        Success message
-    """
-    data = request.get_json()
-    
-    if not data:
-        return jsonify({"error": "Request body is required"}), 400
+    data = request.get_json() or {}
     
     current_password = data.get("current_password", "")
     new_password = data.get("new_password", "")
     
     if not current_password or not new_password:
-        return jsonify({"error": "Current and new passwords are required"}), 400
+        return api_response().error("Current and new passwords are required", 400)
     
-    # Validate new password
     is_valid, error = InputValidator.validate_password(new_password)
     if not is_valid:
-        return jsonify({"error": error}), 400
+        return api_response().error(error, 400, "INVALID_PASSWORD")
     
     try:
-        user_id = get_jwt_identity()
-        user = User.query.get(user_id)
+        user = User.query.get(get_jwt_identity())
         
         if not user:
-            return jsonify({"error": "User not found"}), 404
+            return api_response().error("User not found", 404)
         
-        # Verify current password
         if not user.check_password(current_password):
-            return jsonify({"error": "Current password is incorrect"}), 401
+            return api_response().error("Current password is incorrect", 401)
         
-        # Update password
         user.set_password(new_password)
         db.session.commit()
         
-        return jsonify({"message": "Password changed successfully"}), 200
+        logger.info(f"Password changed for user: {user.id}")
+        
+        return api_response().success(message="Password changed successfully")
         
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Password change error: {e}")
-        return jsonify({"error": "Password change failed"}), 500
-
-
-@auth_bp.route("/email/stats", methods=["GET"])
-@jwt_required()
-def get_email_stats():
-    """
-    Get email service statistics (admin only in production).
-    
-    Returns:
-        Email queue statistics
-    """
-    try:
-        email_service = get_email_service()
-        stats = email_service.get_queue_stats()
-        return jsonify({"stats": stats}), 200
-    except Exception as e:
-        current_app.logger.error(f"Email stats error: {e}")
-        return jsonify({"error": "Failed to get email stats"}), 500
+        logger.error(f"Password change error: {e}")
+        return api_response().error("Password change failed", 500)

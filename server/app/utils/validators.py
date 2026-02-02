@@ -1,233 +1,289 @@
 # server/app/utils/validators.py
 
-"""
-Input validation utilities.
-Strict validation for security and data integrity.
-"""
-
 import re
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 from urllib.parse import urlparse
 
 from flask import current_app
 
 
 class URLValidator:
-    """Validator for URLs."""
-    
-    # Allowed URL schemes
     ALLOWED_SCHEMES = {"http", "https"}
-    
-    # Maximum URL length
+    BLOCKED_SCHEMES = {"javascript", "data", "vbscript", "file", "ftp", "mailto"}
     MAX_URL_LENGTH = 2048
-    
-    # Regex for basic URL structure
-    URL_REGEX = re.compile(
-        r'^(?:http|https)://'  # scheme
-        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain
-        r'localhost|'  # localhost
-        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ip
-        r'(?::\d+)?'  # optional port
-        r'(?:/?|[/?]\S+)$', re.IGNORECASE
-    )
-    
-    # Blocked domains (malicious, spam, etc.)
+
     BLOCKED_DOMAINS = {
-        "bit.ly", "tinyurl.com", "goo.gl", "t.co",  # Other shorteners
-        "localhost", "127.0.0.1", "0.0.0.0",  # Local addresses
+        "bit.ly", "tinyurl.com", "goo.gl", "t.co", "ow.ly", "is.gd",
+        "buff.ly", "shorte.st", "cutt.ly", "rebrand.ly", "short.io",
+        "tiny.cc", "bc.vc", "v.gd", "soo.gd",
+        "localhost", "127.0.0.1", "0.0.0.0", "::1",
+        "10.0.0.0", "172.16.0.0", "192.168.0.0"
     }
-    
+
     @classmethod
     def validate(cls, url: str) -> Tuple[bool, Optional[str], Optional[str]]:
-        """
-        Validate a URL.
-        
-        Args:
-            url: URL to validate
-        
-        Returns:
-            Tuple of (is_valid, normalized_url, error_message)
-        """
         if not url:
             return False, None, "URL is required"
-        
+
         url = url.strip()
-        
-        # Check length
+
         if len(url) > cls.MAX_URL_LENGTH:
-            return False, None, f"URL exceeds maximum length of {cls.MAX_URL_LENGTH} characters"
-        
-        # Parse URL
+            return False, None, f"URL is too long (max {cls.MAX_URL_LENGTH} characters)"
+
         try:
             parsed = urlparse(url)
         except Exception:
             return False, None, "Invalid URL format"
-        
-        # Check scheme
-        if parsed.scheme.lower() not in cls.ALLOWED_SCHEMES:
-            return False, None, f"URL scheme must be one of: {', '.join(cls.ALLOWED_SCHEMES)}"
-        
-        # Check for host
+
+        scheme = parsed.scheme.lower()
+
+        if scheme in cls.BLOCKED_SCHEMES:
+            return False, None, "This URL type is not allowed"
+
+        if scheme not in cls.ALLOWED_SCHEMES:
+            return False, None, "URL must start with http:// or https://"
+
         if not parsed.netloc:
-            return False, None, "URL must have a valid domain"
-        
-        # Extract domain without port
+            return False, None, "URL must include a domain"
+
         domain = parsed.netloc.split(":")[0].lower()
-        
-        # Check against blocked domains
+
         if domain in cls.BLOCKED_DOMAINS:
-            return False, None, "This domain is not allowed"
-        
-        # Check with regex
-        if not cls.URL_REGEX.match(url):
-            return False, None, "Invalid URL format"
-        
-        # Normalize URL
-        normalized = url.strip()
-        
-        return True, normalized, None
-    
+            return False, None, "This domain cannot be shortened"
+
+        for blocked in cls.BLOCKED_DOMAINS:
+            if domain.endswith(f".{blocked}"):
+                return False, None, "This domain cannot be shortened"
+
+        try:
+            from app.utils.base_url import get_public_base_url, get_backend_base_url
+            
+            public_domain = urlparse(get_public_base_url()).netloc.lower()
+            backend_domain = urlparse(get_backend_base_url()).netloc.lower()
+            
+            if domain == public_domain or domain == backend_domain:
+                return False, None, "Cannot shorten Savlink URLs"
+        except Exception:
+            pass
+
+        if cls._is_ip_address(domain):
+            if cls._is_private_ip(domain):
+                return False, None, "Private IP addresses are not allowed"
+
+        return True, url, None
+
     @classmethod
-    def is_valid(cls, url: str) -> bool:
-        """Quick check if URL is valid."""
-        is_valid, _, _ = cls.validate(url)
-        return is_valid
+    def _is_ip_address(cls, domain: str) -> bool:
+        parts = domain.split(".")
+        if len(parts) != 4:
+            return False
+        try:
+            return all(0 <= int(p) <= 255 for p in parts)
+        except ValueError:
+            return False
+
+    @classmethod
+    def _is_private_ip(cls, ip: str) -> bool:
+        try:
+            parts = [int(p) for p in ip.split(".")]
+            if parts[0] == 10:
+                return True
+            if parts[0] == 172 and 16 <= parts[1] <= 31:
+                return True
+            if parts[0] == 192 and parts[1] == 168:
+                return True
+            if parts[0] == 127:
+                return True
+            return False
+        except Exception:
+            return False
+
+    @classmethod
+    def normalize(cls, url: str) -> str:
+        url = url.strip()
+        
+        if not url.startswith(('http://', 'https://')):
+            url = f"https://{url}"
+        
+        return url
 
 
 class InputValidator:
-    """General input validator."""
+    EMAIL_REGEX = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
     
-    # Email regex (RFC 5322 simplified)
-    EMAIL_REGEX = re.compile(
-        r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    )
-    
-    # Password requirements
     MIN_PASSWORD_LENGTH = 8
     MAX_PASSWORD_LENGTH = 128
     
-    # Slug requirements
     SLUG_REGEX = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_-]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$')
     
+    FOLDER_NAME_REGEX = re.compile(r'^[\w\s\-\.]+$', re.UNICODE)
+    TAG_NAME_REGEX = re.compile(r'^[\w\-]+$', re.UNICODE)
+
     @classmethod
     def validate_email(cls, email: str) -> Tuple[bool, Optional[str], Optional[str]]:
-        """
-        Validate email address.
-        
-        Args:
-            email: Email to validate
-        
-        Returns:
-            Tuple of (is_valid, normalized_email, error_message)
-        """
         if not email:
             return False, None, "Email is required"
-        
+
         email = email.strip().lower()
-        
+
         if len(email) > 255:
             return False, None, "Email is too long"
-        
+
         if not cls.EMAIL_REGEX.match(email):
-            return False, None, "Invalid email format"
-        
+            return False, None, "Please enter a valid email address"
+
         return True, email, None
-    
+
     @classmethod
     def validate_password(cls, password: str) -> Tuple[bool, Optional[str]]:
-        """
-        Validate password strength.
-        
-        Args:
-            password: Password to validate
-        
-        Returns:
-            Tuple of (is_valid, error_message)
-        """
         if not password:
             return False, "Password is required"
-        
+
         if len(password) < cls.MIN_PASSWORD_LENGTH:
             return False, f"Password must be at least {cls.MIN_PASSWORD_LENGTH} characters"
-        
+
         if len(password) > cls.MAX_PASSWORD_LENGTH:
-            return False, f"Password must not exceed {cls.MAX_PASSWORD_LENGTH} characters"
-        
-        # Check for at least one uppercase letter
+            return False, "Password is too long"
+
         if not re.search(r'[A-Z]', password):
-            return False, "Password must contain at least one uppercase letter"
-        
-        # Check for at least one lowercase letter
+            return False, "Password must include an uppercase letter"
+
         if not re.search(r'[a-z]', password):
-            return False, "Password must contain at least one lowercase letter"
-        
-        # Check for at least one digit
+            return False, "Password must include a lowercase letter"
+
         if not re.search(r'\d', password):
-            return False, "Password must contain at least one digit"
-        
-        # Check for at least one special character
-        if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
-            return False, "Password must contain at least one special character"
-        
+            return False, "Password must include a number"
+
+        if not re.search(r'[!@#$%^&*(),.?":{}|<>\-_=+\[\]\\;\'`~]', password):
+            return False, "Password must include a special character"
+
         return True, None
-    
+
     @classmethod
     def validate_slug(cls, slug: str) -> Tuple[bool, Optional[str], Optional[str]]:
-        """
-        Validate custom slug.
-        
-        Args:
-            slug: Slug to validate
-        
-        Returns:
-            Tuple of (is_valid, normalized_slug, error_message)
-        """
         if not slug:
             return False, None, "Slug is required"
-        
+
         slug = slug.strip().lower()
-        
-        min_length = current_app.config.get("SLUG_MIN_LENGTH", 4)
-        max_length = current_app.config.get("SLUG_MAX_LENGTH", 20)
-        reserved_slugs = current_app.config.get("RESERVED_SLUGS", set())
-        
-        if len(slug) < min_length:
-            return False, None, f"Slug must be at least {min_length} characters"
-        
-        if len(slug) > max_length:
-            return False, None, f"Slug must not exceed {max_length} characters"
-        
+
+        min_len = current_app.config.get("SLUG_MIN_LENGTH", 3)
+        max_len = current_app.config.get("SLUG_MAX_LENGTH", 32)
+        reserved = current_app.config.get("RESERVED_SLUGS", set())
+
+        if len(slug) < min_len:
+            return False, None, f"Short link must be at least {min_len} characters"
+
+        if len(slug) > max_len:
+            return False, None, f"Short link cannot exceed {max_len} characters"
+
         if not cls.SLUG_REGEX.match(slug):
-            return False, None, "Slug can only contain letters, numbers, hyphens, and underscores"
-        
-        if slug in reserved_slugs:
-            return False, None, "This slug is reserved and cannot be used"
-        
+            return False, None, "Short link can only contain letters, numbers, hyphens, and underscores"
+
+        if slug in reserved:
+            return False, None, "This short link is reserved"
+
+        if slug.startswith(('-', '_')) or slug.endswith(('-', '_')):
+            return False, None, "Short link cannot start or end with hyphen or underscore"
+
+        if '--' in slug or '__' in slug:
+            return False, None, "Short link cannot contain consecutive hyphens or underscores"
+
         return True, slug, None
-    
+
+    @classmethod
+    def validate_folder_name(cls, name: str) -> Tuple[bool, Optional[str], Optional[str]]:
+        if not name:
+            return False, None, "Folder name is required"
+
+        name = name.strip()
+
+        if len(name) > 100:
+            return False, None, "Folder name is too long (max 100 characters)"
+
+        if len(name) < 1:
+            return False, None, "Folder name is too short"
+
+        return True, name, None
+
+    @classmethod
+    def validate_tag_name(cls, name: str) -> Tuple[bool, Optional[str], Optional[str]]:
+        if not name:
+            return False, None, "Tag name is required"
+
+        name = name.strip().lower()
+
+        if len(name) > 50:
+            return False, None, "Tag name is too long (max 50 characters)"
+
+        if len(name) < 1:
+            return False, None, "Tag name is too short"
+
+        if not cls.TAG_NAME_REGEX.match(name):
+            return False, None, "Tag name can only contain letters, numbers, and hyphens"
+
+        return True, name, None
+
+    @classmethod
+    def validate_color(cls, color: str) -> Tuple[bool, Optional[str], Optional[str]]:
+        if not color:
+            return True, None, None
+
+        color = color.strip()
+
+        hex_pattern = re.compile(r'^#[0-9A-Fa-f]{6}$')
+        if hex_pattern.match(color):
+            return True, color.upper(), None
+
+        return False, None, "Color must be a valid hex code (e.g., #FF5733)"
+
     @classmethod
     def sanitize_string(cls, value: str, max_length: int = 255) -> str:
-        """
-        Sanitize a string input.
-        
-        Args:
-            value: String to sanitize
-            max_length: Maximum allowed length
-        
-        Returns:
-            Sanitized string
-        """
         if not value:
             return ""
-        
-        # Strip whitespace
+
         value = value.strip()
-        
-        # Truncate if too long
+
         if len(value) > max_length:
             value = value[:max_length]
-        
-        # Remove null bytes and other control characters
+
         value = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', value)
-        
+
         return value
+
+    @classmethod
+    def sanitize_markdown(cls, value: str, max_length: int = 5000) -> str:
+        if not value:
+            return ""
+
+        value = value.strip()
+
+        if len(value) > max_length:
+            value = value[:max_length]
+
+        dangerous_patterns = [
+            r'<script[^>]*>.*?</script>',
+            r'javascript:',
+            r'on\w+\s*=',
+            r'<iframe[^>]*>',
+            r'<object[^>]*>',
+            r'<embed[^>]*>',
+        ]
+
+        for pattern in dangerous_patterns:
+            value = re.sub(pattern, '', value, flags=re.IGNORECASE | re.DOTALL)
+
+        return value
+
+    @classmethod
+    def validate_url_list(cls, urls: List[str]) -> Tuple[List[str], List[dict]]:
+        valid_urls = []
+        errors = []
+
+        for url in urls:
+            is_valid, normalized, error = URLValidator.validate(url)
+            if is_valid:
+                valid_urls.append(normalized)
+            else:
+                errors.append({"url": url[:100], "error": error})
+
+        return valid_urls, errors

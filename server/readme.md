@@ -1,8 +1,10 @@
 <div align="center">
 
-# 🔗 CinBrainLinks
+# 🔗 Savlink
 
-### **Production-Grade Branded URL Shortener Platform**
+### **Save Once. Use Forever.**
+
+Your personal link operating system — save, organize, and optionally shorten your important links
 
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Flask](https://img.shields.io/badge/Flask-3.0-000000?style=for-the-badge&logo=flask&logoColor=white)](https://flask.palletsprojects.com)
@@ -13,32 +15,44 @@
 <br />
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
-[![API Status](https://img.shields.io/badge/API-Stable-success?style=flat-square)]()
+[![API](https://img.shields.io/badge/API-v2.0-success?style=flat-square)]()
 [![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Maintenance](https://img.shields.io/badge/Maintained-Yes-blue.svg?style=flat-square)]()
 
 <br />
 
-[**🚀 Live Demo**](https://cinbrainlinks.up.railway.app) · [**📖 API Docs**](#-api-reference) · [**🐛 Report Bug**](../../issues) · [**✨ Request Feature**](../../issues)
+[**🚀 Live App**](https://savlink.vercel.app) · [**📖 API Docs**](#-api-reference) · [**🐛 Report Bug**](../../issues) · [**✨ Request Feature**](../../issues)
 
 ---
 
 </div>
 
+## 🎯 What is Savlink?
+
+**Savlink is NOT just a URL shortener.** It's a personal link management system that lets you:
+
+- 📌 **Save important links** — Build your personal collection of links you use repeatedly
+- 📁 **Organize with folders & tags** — Keep everything structured and findable
+- 🔗 **Optionally shorten URLs** — Create clean, branded short links when you need them
+- 📊 **Track engagement** — See how your shared links perform
+- 🔒 **Keep links private** — Your saved links are yours alone
+
+> **Philosophy:** Links are long-term personal assets, not disposable redirects.
+
+---
+
 ## 📋 Table of Contents
 
 - [✨ Features](#-features)
-- [🏗️ Architecture](#-architecture)
-- [🛠️ Tech Stack](#-tech-stack)
+- [🏗️ Architecture](#️-architecture)
+- [🛠️ Tech Stack](#️-tech-stack)
 - [🚀 Quick Start](#-quick-start)
-- [⚙️ Configuration](#-configuration)
+- [⚙️ Configuration](#️-configuration)
 - [📡 API Reference](#-api-reference)
-- [🗄️ Database Schema](#-database-schema)
+- [🗄️ Database Schema](#️-database-schema)
 - [🚢 Deployment](#-deployment)
 - [📊 Monitoring](#-monitoring)
 - [🧪 Testing](#-testing)
 - [🤝 Contributing](#-contributing)
-- [📄 License](#-license)
 
 ---
 
@@ -46,34 +60,65 @@
 
 <div align="center">
 
+### Core Features
+
 | | | |
 |:---:|:---:|:---:|
-| 🔐 **Secure Authentication** | 🔗 **URL Shortening** | 📊 **Click Analytics** |
-| JWT-based auth with refresh tokens | Custom & auto-generated slugs | Real-time click tracking |
-| 📧 **Email Integration** | ⚡ **High Performance** | 🛡️ **Enterprise Security** |
-| Brevo SMTP/API support | Redis caching layer | Rate limiting & validation |
-| 📱 **QR Code Generation** | ⏰ **Link Expiration** | 🎯 **Custom Slugs** |
-| Dynamic QR codes for links | Set expiry dates | Branded short URLs |
+| 📌 **Save Links** | 🔗 **Shorten URLs** | 📁 **Folders** |
+| Build your personal collection | Optional short links with custom slugs | Organize links into collections |
+| 🏷️ **Tags** | 📊 **Analytics** | 🔍 **Search** |
+| Flexible categorization | Click tracking & insights | Full-text search across all links |
+| 📱 **QR Codes** | 🔒 **Private Sharing** | 🗑️ **Trash & Restore** |
+| Dynamic QR generation | Password-protected share links | Soft delete with recovery |
+| 🏥 **Health Monitoring** | 📋 **Templates** | 📤 **Import/Export** |
+| Automatic broken link detection | Quick-create from templates | Backup & migrate your data |
 
 </div>
 
-### 🎯 Core Capabilities
+### 🔄 Dual Link Types
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                                                                     │
-│  🔐 AUTHENTICATION           │  🔗 URL MANAGEMENT                   │
-│  ├─ User Registration        │  ├─ Create Short Links               │
-│  ├─ JWT Access Tokens        │  ├─ Custom Slugs                     │
-│  ├─ Refresh Token Rotation   │  ├─ Auto-Generated Slugs             │
-│  ├─ Password Reset Flow      │  ├─ Link Expiration                  │
-│  └─ Session Management       │  └─ Enable/Disable Links             │
-│                              │                                      │
-│  ⚡ PERFORMANCE              │  📊 ANALYTICS                        │
-│  ├─ Redis Caching            │  ├─ Click Counting                   │
-│  ├─ Async Click Tracking     │  ├─ Link Statistics                  │
-│  ├─ Connection Pooling       │  └─ User Dashboard Stats             │
-│  └─ Optimized Queries        │                                      │
+│  📌 SAVED LINKS                   │  🔗 SHORTENED LINKS             │
+│  ─────────────────                │  ──────────────────             │
+│  • Private to your account        │  • Public redirect URL          │
+│  • No slug required               │  • Custom or auto-generated slug│
+│  • Dashboard access only          │  • Click tracking enabled       │
+│  • Perfect for bookmarks          │  • Great for sharing            │
+│  • Never publicly accessible      │  • Optional expiration          │
+│                                   │                                 │
+│  Example:                         │  Example:                       │
+│  Save your bank login page        │  Share a campaign link          │
+│  Save your favorite recipes       │  savlink.vercel.app/my-promo    │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 🎯 Complete Feature List
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                                                                     │
+│  🔐 AUTHENTICATION               │  📁 ORGANIZATION                 │
+│  ├─ JWT Access/Refresh Tokens    │  ├─ Folders with nesting         │
+│  ├─ Password Reset Flow          │  ├─ Tags with colors             │
+│  ├─ Session Management           │  ├─ System categories            │
+│  └─ Email Verification           │  └─ Pin important links          │
+│                                  │                                  │
+│  📊 ANALYTICS                    │  🔗 LINK MANAGEMENT              │
+│  ├─ Click tracking               │  ├─ Save without shortening      │
+│  ├─ Referrer analysis            │  ├─ Shorten with custom slug     │
+│  ├─ Device/browser stats         │  ├─ Duplicate detection          │
+│  ├─ Geographic data              │  ├─ Version history              │
+│  └─ Timeline visualization       │  └─ Bulk operations              │
+│                                  │                                  │
+│  🔒 PRIVACY & SHARING            │  🛠️ UTILITIES                    │
+│  ├─ Private saved links          │  ├─ QR code generation           │
+│  ├─ Password-protected shares    │  ├─ Link preview                 │
+│  ├─ Expiring share links         │  ├─ Health monitoring            │
+│  └─ View limits                  │  ├─ Import/Export                │
+│                                  │  └─ Link templates               │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -85,43 +130,57 @@
 ```
                                     ┌─────────────────┐
                                     │  React Frontend │
-                                    │   (Vercel/etc)  │
+                                    │ savlink.vercel  │
                                     └────────┬────────┘
+                                             │
+                              All short URLs: savlink.vercel.app/<slug>
                                              │
                                              ▼
                               ┌──────────────────────────┐
                               │      Railway Cloud       │
                               │  ┌────────────────────┐  │
-                              │  │   Load Balancer    │  │
-                              │  └──────────┬─────────┘  │
-                              │             │            │
-                              │             ▼            │
-                              │  ┌────────────────────┐  │
-                              │  │  Gunicorn Workers  │  │
+                              │  │   Gunicorn + Flask │  │
+                              │  │                    │  │
                               │  │  ┌──────────────┐  │  │
-                              │  │  │  Flask App   │  │  │
-                              │  │  │ ┌──────────┐ │  │  │
-                              │  │  │ │ Routes   │ │  │  │
-                              │  │  │ │ Services │ │  │  │
-                              │  │  │ │ Models   │ │  │  │
-                              │  │  │ └──────────┘ │  │  │
+                              │  │  │   Routes     │  │  │
+                              │  │  │  ──────────  │  │  │
+                              │  │  │  • auth      │  │  │
+                              │  │  │  • links     │  │  │
+                              │  │  │  • folders   │  │  │
+                              │  │  │  • tags      │  │  │
+                              │  │  │  • analytics │  │  │
+                              │  │  │  • sharing   │  │  │
+                              │  │  │  • search    │  │  │
+                              │  │  │  • bulk      │  │  │
+                              │  │  │  • health    │  │  │
+                              │  │  │  • redirect  │  │  │
                               │  │  └──────────────┘  │  │
-                              │  └────────┬───────────┘  │
-                              │           │              │
-                              │     ┌─────┴─────┐        │
-                              │     ▼           ▼        │
-                              │  ┌──────┐   ┌────────┐   │
-                              │  │Redis │   │Postgres│   │
-                              │  │Cache │   │   DB   │   │
-                              │  └──────┘   └────────┘   │
+                              │  └─────────┬──────────┘  │
+                              │            │             │
+                              │      ┌─────┴─────┐       │
+                              │      ▼           ▼       │
+                              │  ┌───────┐  ┌────────┐   │
+                              │  │ Redis │  │Postgres│   │
+                              │  │(Cache)│  │  (DB)  │   │
+                              │  └───────┘  └────────┘   │
                               └──────────────────────────┘
-                                             │
-                                             ▼
+                                          │
+                                          ▼
                               ┌──────────────────────────┐
-                              │       Brevo SMTP         │
-                              │    (Email Service)       │
+                              │     Brevo (Email)        │
                               └──────────────────────────┘
 ```
+
+### 🌐 URL Strategy
+
+| URL Type | Domain | Example |
+|----------|--------|---------|
+| **Frontend App** | `savlink.vercel.app` | `savlink.vercel.app/dashboard` |
+| **Short Links** | `savlink.vercel.app` | `savlink.vercel.app/my-link` |
+| **Share Links** | `savlink.vercel.app` | `savlink.vercel.app/s/abc123` |
+| **Backend API** | `*.railway.app` | Never exposed to users |
+
+> ⚠️ **Important:** The Railway backend URL is never shown to users. All public-facing URLs use `savlink.vercel.app`.
 
 ---
 
@@ -131,49 +190,36 @@
 
 ### Backend Framework
 
-[![Flask](https://img.shields.io/badge/Flask-000000?style=for-the-badge&logo=flask&logoColor=white)](https://flask.palletsprojects.com/)
+[![Flask](https://img.shields.io/badge/Flask_3.0-000000?style=for-the-badge&logo=flask&logoColor=white)](https://flask.palletsprojects.com/)
 [![Python](https://img.shields.io/badge/Python_3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 
 ### Database & Cache
 
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)](https://postgresql.org)
 [![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io)
-[![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-D71F00?style=for-the-badge&logo=sqlalchemy&logoColor=white)](https://sqlalchemy.org)
 
-### Authentication & Security
-
-[![JWT](https://img.shields.io/badge/JWT-000000?style=for-the-badge&logo=json-web-tokens&logoColor=white)](https://jwt.io)
-[![Bcrypt](https://img.shields.io/badge/Bcrypt-003A70?style=for-the-badge&logo=letsencrypt&logoColor=white)]()
-
-### Deployment & Infrastructure
+### Infrastructure
 
 [![Railway](https://img.shields.io/badge/Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white)](https://railway.app)
-[![Gunicorn](https://img.shields.io/badge/Gunicorn-499848?style=for-the-badge&logo=gunicorn&logoColor=white)](https://gunicorn.org)
-[![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://docker.com)
-
-### Email Service
-
-[![Brevo](https://img.shields.io/badge/Brevo-0B1A8A?style=for-the-badge&logo=sendinblue&logoColor=white)](https://brevo.com)
+[![Vercel](https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://vercel.com)
 
 </div>
 
-### 📦 Complete Dependencies
+### 📦 Key Dependencies
 
 | Package | Version | Purpose |
 |---------|---------|---------|
 | Flask | 3.0.0 | Web framework |
-| Flask-RESTful | 0.3.10 | REST API support |
 | Flask-JWT-Extended | 4.6.0 | JWT authentication |
-| Flask-SQLAlchemy | 3.1.1 | ORM integration |
+| Flask-SQLAlchemy | 3.1.1 | ORM |
 | Flask-Migrate | 4.0.5 | Database migrations |
-| Flask-CORS | 4.0.0 | Cross-origin support |
 | Flask-Limiter | 3.5.0 | Rate limiting |
-| SQLAlchemy | 2.0.23 | Database ORM |
-| psycopg2-binary | 2.9.9 | PostgreSQL driver |
-| redis | 5.0.1 | Redis client |
-| gunicorn | 21.2.0 | WSGI server |
+| redis | 5.0.1 | Caching |
 | requests | 2.31.0 | HTTP client |
+| beautifulsoup4 | 4.12.2 | Metadata extraction |
+| user-agents | 2.2.0 | User agent parsing |
 | qrcode | 7.4.2 | QR code generation |
+| gunicorn | 21.2.0 | Production server |
 
 ---
 
@@ -181,699 +227,535 @@
 
 ### Prerequisites
 
-- **Python 3.11+**
-- **PostgreSQL 14+**
-- **Redis 7+**
-- **Brevo Account** (for emails)
+- Python 3.11+
+- PostgreSQL 14+
+- Redis 7+
+- Brevo Account (optional, for emails)
 
 ### 📥 Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/cinbrainlinks.git
-cd cinbrainlinks/server
+git clone https://github.com/yourusername/savlink.git
+cd savlink/server
 
 # Create virtual environment
 python -m venv venv
-
-# Activate virtual environment
-# On macOS/Linux:
-source venv/bin/activate
-# On Windows:
-.\venv\Scripts\activate
+source venv/bin/activate  # Windows: .\venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Copy environment template
+cp .env.example .env
 ```
 
-### ⚙️ Environment Setup
+### ⚙️ Configure Environment
+
+Edit `.env` with your settings:
 
 ```bash
-# Copy example environment file
-cp .env.example .env
+# Required
+SECRET_KEY=your-secret-key-min-32-chars
+JWT_SECRET_KEY=your-jwt-secret-min-32-chars
+DATABASE_URL=postgresql://user:pass@localhost:5432/savlink
 
-# Edit with your configuration
-nano .env
+# Critical URLs
+PUBLIC_BASE_URL=https://savlink.vercel.app
+FRONTEND_URL=https://savlink.vercel.app
+
+# Optional
+REDIS_URL=redis://localhost:6379
+BREVO_API_KEY=your-brevo-key
 ```
 
 ### 🗄️ Database Setup
 
 ```bash
-# Initialize migrations
-flask db init
-
-# Create migration
-flask db migrate -m "Initial migration"
-
-# Apply migration
+# Run migrations
 flask db upgrade
 ```
 
 ### ▶️ Run Development Server
 
 ```bash
-# Start the development server
 python run.py
-
-# Or with Flask CLI
-flask run --debug
 ```
 
-🎉 **Server is running at `http://localhost:5000`**
+🎉 **API running at `http://localhost:5000`**
 
 ---
 
 ## ⚙️ Configuration
 
-### 🔐 Required Environment Variables
+### 🔐 Required Variables
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `SECRET_KEY` | Flask secret key (32+ chars) | `your-super-secret-key...` |
-| `JWT_SECRET_KEY` | JWT signing key (32+ chars) | `your-jwt-secret-key...` |
-| `DATABASE_URL` | PostgreSQL connection URL | `postgresql://user:pass@host:5432/db` |
-| `REDIS_URL` | Redis connection URL | `redis://localhost:6379` |
-| `FRONTEND_URL` | Your frontend URL | `https://yourapp.vercel.app` |
-| `BREVO_API_KEY` | Brevo API key | `xkeysib-...` |
-| `BREVO_SENDER_EMAIL` | Sender email address | `noreply@yourdomain.com` |
+| `SECRET_KEY` | Flask secret (32+ chars) | `openssl rand -hex 32` |
+| `JWT_SECRET_KEY` | JWT secret (32+ chars) | `openssl rand -hex 32` |
+| `DATABASE_URL` | PostgreSQL URL | `postgresql://...` |
+| `PUBLIC_BASE_URL` | **Public-facing URL** | `https://savlink.vercel.app` |
+| `FRONTEND_URL` | Frontend app URL | `https://savlink.vercel.app` |
 
-### 📧 Email Configuration
+### 🌐 URL Configuration (Critical)
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `BREVO_API_KEY` | Brevo API key | - |
-| `BREVO_SMTP_SERVER` | SMTP server | `smtp-relay.brevo.com` |
-| `BREVO_SMTP_PORT` | SMTP port | `587` |
-| `BREVO_SMTP_USERNAME` | SMTP username | - |
-| `BREVO_SMTP_PASSWORD` | SMTP password | - |
-| `BREVO_SENDER_EMAIL` | From email | `noreply@cinbrainlinks.com` |
-| `BREVO_SENDER_NAME` | From name | `CinBrainLinks` |
-| `REPLY_TO_EMAIL` | Reply-to email | Same as sender |
+| Variable | Purpose | Production Value |
+|----------|---------|------------------|
+| `PUBLIC_BASE_URL` | Short link URLs, QR codes, emails | `https://savlink.vercel.app` |
+| `FRONTEND_URL` | Password reset links, dashboard URLs | `https://savlink.vercel.app` |
+| `BASE_URL` | Backend URL (internal only) | `https://your-app.railway.app` |
 
-### 🔧 Optional Variables
+> ⚠️ **Never expose `BASE_URL` to users.** All user-facing URLs must use `PUBLIC_BASE_URL`.
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `FLASK_ENV` | Environment mode | `production` |
-| `CORS_ORIGINS` | Allowed origins (comma-separated) | `*` |
-| `RATELIMIT_DEFAULT` | Default rate limit | `200 per hour` |
-| `SENTRY_DSN` | Sentry error tracking | - |
+### 📧 Email Configuration (Optional)
+
+| Variable | Description |
+|----------|-------------|
+| `BREVO_API_KEY` | Brevo API key |
+| `BREVO_SENDER_EMAIL` | From email address |
+| `BREVO_SENDER_NAME` | From display name |
+
+### 🔧 Feature Flags
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MAX_LINKS_PER_USER` | 10000 | Link limit per user |
+| `CLICK_RETENTION_DAYS` | 365 | Click data retention |
+| `ENABLE_WEEKLY_DIGEST` | false | Weekly email digest |
+| `ENABLE_BROKEN_LINK_ALERTS` | true | Broken link notifications |
 
 ### 📁 Project Structure
 
 ```
 server/
 ├── app/
-│   ├── __init__.py          # Application factory
-│   ├── config.py            # Configuration classes
-│   ├── extensions.py        # Flask extensions
+│   ├── __init__.py              # App factory
+│   ├── config.py                # Configuration
+│   ├── extensions.py            # Flask extensions
 │   │
-│   ├── models/              # Database models
-│   │   ├── __init__.py
-│   │   ├── user.py          # User model
-│   │   └── link.py          # Link model
+│   ├── models/                  # Database models
+│   │   ├── user.py              # User model
+│   │   ├── link.py              # Link model (dual types)
+│   │   ├── folder.py            # Folder model
+│   │   ├── tag.py               # Tag model
+│   │   ├── link_click.py        # Click analytics
+│   │   ├── link_version.py      # Version history
+│   │   ├── shared_link.py       # Private sharing
+│   │   ├── link_health.py       # Health checks
+│   │   ├── category.py          # System categories
+│   │   ├── activity_log.py      # Activity feed
+│   │   └── link_template.py     # Templates
 │   │
-│   ├── routes/              # API endpoints
-│   │   ├── __init__.py
-│   │   ├── auth.py          # Authentication routes
-│   │   ├── links.py         # Link management routes
-│   │   └── redirect.py      # URL redirection
+│   ├── routes/                  # API endpoints
+│   │   ├── auth.py              # Authentication
+│   │   ├── links.py             # Link CRUD
+│   │   ├── redirect.py          # URL redirection
+│   │   ├── folders.py           # Folder management
+│   │   ├── tags.py              # Tag management
+│   │   ├── analytics.py         # Click analytics
+│   │   ├── sharing.py           # Private sharing
+│   │   ├── health.py            # Link health
+│   │   ├── bulk.py              # Bulk operations
+│   │   ├── activity.py          # Activity feed
+│   │   ├── templates.py         # Link templates
+│   │   ├── categories.py        # Categories
+│   │   └── search.py            # Search
 │   │
-│   ├── services/            # Business logic
-│   │   ├── __init__.py
-│   │   ├── redis_service.py # Redis caching
-│   │   └── email_service.py # Email handling
+│   ├── services/                # Business logic
+│   │   ├── redis_service.py     # Caching
+│   │   ├── email_service.py     # Email delivery
+│   │   ├── activity_service.py  # Activity logging
+│   │   ├── click_service.py     # Click tracking
+│   │   ├── health_service.py    # Health monitoring
+│   │   ├── metadata_service.py  # OG data extraction
+│   │   ├── link_service.py      # Link operations
+│   │   └── export_service.py    # Import/Export
 │   │
-│   └── utils/               # Utilities
-│       ├── __init__.py
-│       ├── validators.py    # Input validation
-│       └── slug.py          # Slug generation
+│   └── utils/                   # Utilities
+│       ├── validators.py        # Input validation
+│       ├── slug.py              # Slug generation
+│       ├── base_url.py          # URL helpers
+│       └── helpers.py           # Common utilities
 │
-├── migrations/              # Database migrations
-├── scripts/                 # Utility scripts
-├── tests/                   # Test suite
-│
-├── run.py                   # Development entry
-├── wsgi.py                  # Production entry
-├── Procfile                 # Railway process file
-├── railway.json             # Railway config
-├── requirements.txt         # Dependencies
-├── .env.example             # Environment template
-└── README.md                # This file
+├── migrations/                  # Database migrations
+├── run.py                       # Development entry
+├── wsgi.py                      # Production entry
+├── requirements.txt             # Dependencies
+└── Procfile                     # Railway config
 ```
 
 ---
 
 ## 📡 API Reference
 
-### Base URL
+### Base URLs
 
 | Environment | URL |
 |-------------|-----|
-| Production | `https://cinbrainlinks.up.railway.app` |
-| Development | `http://localhost:5000` |
+| Production API | `https://your-app.railway.app/api` |
+| Short Links | `https://savlink.vercel.app/<slug>` |
+| Development | `http://localhost:5000/api` |
+
+### Response Format
+
+```json
+// Success
+{
+  "success": true,
+  "message": "Operation completed",
+  "data": { }
+}
+
+// Error
+{
+  "success": false,
+  "error": {
+    "message": "Error description",
+    "code": "ERROR_CODE"
+  }
+}
+```
 
 ---
 
 ### 🔐 Authentication
 
-#### POST `/api/auth/register` - Register new user
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/auth/register` | POST | Create new account |
+| `/api/auth/login` | POST | Sign in |
+| `/api/auth/logout` | POST | Sign out |
+| `/api/auth/refresh` | POST | Refresh access token |
+| `/api/auth/me` | GET | Get current user |
+| `/api/auth/password/forgot` | POST | Request password reset |
+| `/api/auth/password/reset` | POST | Reset password |
+| `/api/auth/password/change` | POST | Change password |
 
-**Request Body:**
+---
 
+### 🔗 Links
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/links` | POST | Create link (saved or shortened) |
+| `/api/links` | GET | List user's links with filters |
+| `/api/links/:id` | GET | Get single link |
+| `/api/links/:id` | PUT | Update link |
+| `/api/links/:id` | DELETE | Delete link (soft/permanent) |
+| `/api/links/:id/restore` | POST | Restore from trash |
+| `/api/links/:id/pin` | POST | Pin link |
+| `/api/links/:id/unpin` | POST | Unpin link |
+| `/api/links/:id/toggle` | POST | Toggle active status |
+| `/api/links/:id/duplicate` | POST | Duplicate link |
+| `/api/links/:id/versions` | GET | Get version history |
+| `/api/links/stats` | GET | Get statistics |
+| `/api/links/trash` | GET | List deleted links |
+| `/api/links/trash/empty` | DELETE | Empty trash |
+| `/api/links/check-slug` | GET | Check slug availability |
+| `/api/links/check-duplicate` | GET | Check if URL exists |
+
+#### Create Link Examples
+
+**Save a link (no shortening):**
 ```json
+POST /api/links
 {
-  "email": "user@example.com",
-  "password": "SecurePass123!",
-  "name": "John Doe"
+  "url": "https://example.com/my-important-page",
+  "link_type": "saved",
+  "title": "My Important Page",
+  "folder_id": "folder-uuid",
+  "tag_ids": ["tag-uuid-1", "tag-uuid-2"]
 }
 ```
 
-**Response:** `201 Created`
-
+**Create a shortened link:**
 ```json
+POST /api/links
 {
-  "message": "Registration successful",
-  "user": {
-    "id": "uuid",
-    "email": "user@example.com",
-    "created_at": "2024-01-15T10:30:00Z"
-  },
-  "access_token": "eyJhbGciOiJIUzI1NiIs...",
-  "refresh_token": "eyJhbGciOiJIUzI1NiIs..."
+  "url": "https://example.com/very/long/url",
+  "link_type": "shortened",
+  "custom_slug": "my-promo",
+  "title": "Promo Campaign",
+  "expires_at": "2024-12-31T23:59:59Z"
 }
 ```
 
 ---
 
-#### POST `/api/auth/login` - Login user
+### 📁 Folders
 
-**Request Body:**
-
-```json
-{
-  "email": "user@example.com",
-  "password": "SecurePass123!"
-}
-```
-
-**Response:** `200 OK`
-
-```json
-{
-  "message": "Login successful",
-  "user": { "..." },
-  "access_token": "eyJhbGciOiJIUzI1NiIs...",
-  "refresh_token": "eyJhbGciOiJIUzI1NiIs..."
-}
-```
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/folders` | POST | Create folder |
+| `/api/folders` | GET | List folders |
+| `/api/folders/:id` | GET | Get folder |
+| `/api/folders/:id` | PUT | Update folder |
+| `/api/folders/:id` | DELETE | Delete folder |
+| `/api/folders/reorder` | POST | Reorder folders |
+| `/api/folders/:id/links` | GET | Get folder's links |
 
 ---
 
-#### POST `/api/auth/logout` - Logout user
+### 🏷️ Tags
 
-**Headers:** `Authorization: Bearer <access_token>`
-
-**Response:** `200 OK`
-
-```json
-{
-  "message": "Logout successful"
-}
-```
-
----
-
-#### POST `/api/auth/refresh` - Refresh access token
-
-**Headers:** `Authorization: Bearer <refresh_token>`
-
-**Response:** `200 OK`
-
-```json
-{
-  "access_token": "eyJhbGciOiJIUzI1NiIs..."
-}
-```
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/tags` | POST | Create tag |
+| `/api/tags` | GET | List tags |
+| `/api/tags/:id` | GET | Get tag |
+| `/api/tags/:id` | PUT | Update tag |
+| `/api/tags/:id` | DELETE | Delete tag |
+| `/api/tags/:id/links` | GET | Get tagged links |
+| `/api/tags/stats` | GET | Tag usage statistics |
 
 ---
 
-#### GET `/api/auth/me` - Get current user
+### 📊 Analytics
 
-**Headers:** `Authorization: Bearer <access_token>`
-
-**Response:** `200 OK`
-
-```json
-{
-  "user": {
-    "id": "uuid",
-    "email": "user@example.com",
-    "created_at": "2024-01-15T10:30:00Z",
-    "links_count": 15
-  }
-}
-```
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/analytics/links/:id` | GET | Link analytics |
+| `/api/analytics/links/:id/clicks` | GET | Click history |
+| `/api/analytics/overview` | GET | User analytics overview |
 
 ---
 
-#### POST `/api/auth/password/forgot` - Request password reset
+### 🔒 Sharing
 
-**Request Body:**
-
-```json
-{
-  "email": "user@example.com"
-}
-```
-
-**Response:** `200 OK`
-
-```json
-{
-  "message": "If an account exists with this email, a password reset link will be sent."
-}
-```
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/share/links/:id` | POST | Create share link |
+| `/api/share/links/:id` | GET | List link's shares |
+| `/api/share/:id` | DELETE | Revoke share |
+| `/api/share/s/:token` | GET | Access shared link |
+| `/api/share/s/:token/verify` | POST | Verify share password |
 
 ---
 
-#### POST `/api/auth/password/reset` - Reset password
+### 🏥 Health Monitoring
 
-**Request Body:**
-
-```json
-{
-  "token": "reset-token-from-email",
-  "password": "NewSecurePass123!"
-}
-```
-
-**Response:** `200 OK`
-
-```json
-{
-  "message": "Password reset successful"
-}
-```
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/health/links/:id/check` | POST | Check link health |
+| `/api/health/links/:id/history` | GET | Health check history |
+| `/api/health/broken` | GET | List broken links |
+| `/api/health/check-all` | POST | Check all stale links |
 
 ---
 
-### 🔗 Links Management
+### 📦 Bulk Operations
 
-#### POST `/api/links` - Create short link
-
-**Headers:** `Authorization: Bearer <access_token>`
-
-**Request Body:**
-
-```json
-{
-  "url": "https://example.com/very/long/url/path",
-  "custom_slug": "my-link",
-  "expires_at": "2024-12-31T23:59:59Z",
-  "title": "My Awesome Link",
-  "description": "Link description"
-}
-```
-
-**Response:** `201 Created`
-
-```json
-{
-  "message": "Link created successfully",
-  "link": {
-    "id": "uuid",
-    "slug": "my-link",
-    "short_url": "https://cinbrainlinks.up.railway.app/my-link",
-    "original_url": "https://example.com/very/long/url/path",
-    "clicks": 0,
-    "is_active": true,
-    "expires_at": "2024-12-31T23:59:59Z",
-    "created_at": "2024-01-15T10:30:00Z"
-  }
-}
-```
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/bulk/move` | POST | Move links to folder |
+| `/api/bulk/tag` | POST | Add/remove tags |
+| `/api/bulk/delete` | POST | Delete multiple links |
+| `/api/bulk/restore` | POST | Restore multiple links |
+| `/api/bulk/toggle` | POST | Enable/disable links |
+| `/api/bulk/export` | POST | Export links |
 
 ---
 
-#### GET `/api/links` - Get all user links
+### 🔍 Search
 
-**Headers:** `Authorization: Bearer <access_token>`
-
-**Query Parameters:**
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `page` | int | 1 | Page number |
-| `per_page` | int | 20 | Items per page (max 100) |
-| `is_active` | bool | - | Filter by status |
-| `sort` | string | created_at | Sort field |
-| `order` | string | desc | Sort order (asc/desc) |
-
-**Response:** `200 OK`
-
-```json
-{
-  "links": ["..."],
-  "pagination": {
-    "page": 1,
-    "per_page": 20,
-    "total_pages": 5,
-    "total_items": 100,
-    "has_next": true,
-    "has_prev": false
-  }
-}
-```
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/search` | GET | Full-text search |
+| `/api/search/suggestions` | GET | Search autocomplete |
 
 ---
 
-#### GET `/api/links/:id` - Get single link
+### 🔀 Redirect & Utilities
 
-**Headers:** `Authorization: Bearer <access_token>`
-
-**Response:** `200 OK`
-
-```json
-{
-  "link": {
-    "id": "uuid",
-    "slug": "my-link",
-    "short_url": "https://cinbrainlinks.up.railway.app/my-link",
-    "original_url": "https://example.com/...",
-    "clicks": 42,
-    "is_active": true,
-    "expires_at": null,
-    "created_at": "2024-01-15T10:30:00Z",
-    "updated_at": "2024-01-15T10:30:00Z"
-  }
-}
-```
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/:slug` | GET | Redirect to original URL |
+| `/:slug/preview` | GET | Preview link info |
+| `/:slug/qr` | GET | Get QR code |
 
 ---
 
-#### PUT `/api/links/:id` - Update link
+### 📋 Other Endpoints
 
-**Headers:** `Authorization: Bearer <access_token>`
-
-**Request Body:**
-
-```json
-{
-  "is_active": false,
-  "expires_at": "2024-06-30T23:59:59Z",
-  "title": "Updated Title"
-}
-```
-
-**Response:** `200 OK`
-
-```json
-{
-  "message": "Link updated successfully",
-  "link": { "..." }
-}
-```
-
----
-
-#### DELETE `/api/links/:id` - Delete link
-
-**Headers:** `Authorization: Bearer <access_token>`
-
-**Response:** `200 OK`
-
-```json
-{
-  "message": "Link deleted successfully"
-}
-```
-
----
-
-#### POST `/api/links/:id/toggle` - Toggle link status
-
-**Headers:** `Authorization: Bearer <access_token>`
-
-**Response:** `200 OK`
-
-```json
-{
-  "message": "Link enabled successfully",
-  "link": { "..." }
-}
-```
-
----
-
-#### GET `/api/links/stats` - Get user statistics
-
-**Headers:** `Authorization: Bearer <access_token>`
-
-**Response:** `200 OK`
-
-```json
-{
-  "stats": {
-    "total_links": 25,
-    "active_links": 20,
-    "inactive_links": 5,
-    "total_clicks": 1523,
-    "expiring_soon": 3
-  },
-  "top_links": ["..."]
-}
-```
-
----
-
-#### GET `/api/links/check-slug?slug=my-link` - Check slug availability
-
-**Headers:** `Authorization: Bearer <access_token>`
-
-**Response:** `200 OK`
-
-```json
-{
-  "slug": "my-link",
-  "available": true
-}
-```
-
----
-
-### 🔀 Redirect
-
-#### GET `/:slug` - Redirect to original URL
-
-**Response:** `302 Redirect` to original URL
-
-**Error Responses:**
-- `404 Not Found` - Link doesn't exist
-- `410 Gone` - Link expired or disabled
-
----
-
-#### GET `/:slug/preview` - Preview link
-
-**Response:** `200 OK`
-
-```json
-{
-  "preview": {
-    "slug": "my-link",
-    "short_url": "https://cinbrainlinks.up.railway.app/my-link",
-    "original_url": "https://example.com/...",
-    "title": "Link Title",
-    "created_at": "2024-01-15T10:30:00Z"
-  }
-}
-```
-
----
-
-#### GET `/:slug/qr` - Get QR code
-
-**Response:** `200 OK`
-
-```json
-{
-  "qr_code": "data:image/png;base64,iVBORw0KGgo...",
-  "short_url": "https://cinbrainlinks.up.railway.app/my-link"
-}
-```
-
----
-
-### 🏥 Health Check
-
-#### GET `/health` - Service health status
-
-**Response:** `200 OK`
-
-```json
-{
-  "status": "healthy",
-  "service": "CinBrainLinks",
-  "environment": "production",
-  "database": "connected",
-  "redis": "connected"
-}
-```
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/activity` | GET | Activity feed |
+| `/api/activity/summary` | GET | Activity summary |
+| `/api/templates` | CRUD | Link templates |
+| `/api/categories` | GET | System categories |
+| `/health` | GET | Service health check |
 
 ---
 
 ## 🗄️ Database Schema
 
-### Users Table
+### Core Tables
 
 ```sql
-┌─────────────────────────────────────────────────────────────────┐
-│                           USERS                                  │
-├─────────────────┬──────────────┬────────────────────────────────┤
-│ id              │ UUID         │ PRIMARY KEY                    │
-│ email           │ VARCHAR(255) │ UNIQUE, NOT NULL               │
-│ password_hash   │ VARCHAR(255) │ NOT NULL                       │
-│ is_active       │ BOOLEAN      │ DEFAULT true                   │
-│ email_verified  │ BOOLEAN      │ DEFAULT false                  │
-│ created_at      │ TIMESTAMP    │ DEFAULT now()                  │
-│ updated_at      │ TIMESTAMP    │ DEFAULT now()                  │
-└─────────────────┴──────────────┴────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                              LINKS                                   │
+├──────────────────────┬──────────────┬───────────────────────────────┤
+│ id                   │ UUID         │ PRIMARY KEY                   │
+│ user_id              │ UUID         │ FK → users.id                 │
+│ link_type            │ ENUM         │ 'saved' | 'shortened'         │
+│ slug                 │ VARCHAR(50)  │ UNIQUE, NULLABLE              │
+│ original_url         │ TEXT         │ NOT NULL                      │
+│ title                │ VARCHAR(255) │                               │
+│ notes                │ TEXT         │ Markdown supported            │
+│ folder_id            │ UUID         │ FK → folders.id               │
+│ category_id          │ UUID         │ FK → categories.id            │
+│ is_active            │ BOOLEAN      │ DEFAULT true                  │
+│ is_pinned            │ BOOLEAN      │ DEFAULT false                 │
+│ is_deleted           │ BOOLEAN      │ DEFAULT false (soft delete)   │
+│ is_broken            │ BOOLEAN      │ DEFAULT false                 │
+│ clicks               │ BIGINT       │ DEFAULT 0                     │
+│ click_tracking       │ BOOLEAN      │ DEFAULT true                  │
+│ privacy_level        │ ENUM         │ 'private'|'unlisted'|'public' │
+│ expires_at           │ TIMESTAMP    │                               │
+│ favicon_url          │ VARCHAR(512) │ Auto-fetched                  │
+│ og_title             │ VARCHAR(255) │ Open Graph                    │
+│ og_description       │ TEXT         │ Open Graph                    │
+│ og_image             │ VARCHAR(512) │ Open Graph                    │
+│ custom_metadata      │ JSON         │ Flexible storage              │
+│ created_at           │ TIMESTAMP    │                               │
+│ updated_at           │ TIMESTAMP    │                               │
+└──────────────────────┴──────────────┴───────────────────────────────┘
 ```
 
-### Links Table
+### Organization Tables
 
 ```sql
-┌─────────────────────────────────────────────────────────────────┐
-│                           LINKS                                  │
-├─────────────────┬──────────────┬────────────────────────────────┤
-│ id              │ UUID         │ PRIMARY KEY                    │
-│ user_id         │ UUID         │ FOREIGN KEY → users.id         │
-│ slug            │ VARCHAR(50)  │ UNIQUE, NOT NULL               │
-│ original_url    │ TEXT         │ NOT NULL                       │
-│ clicks          │ BIGINT       │ DEFAULT 0                      │
-│ is_active       │ BOOLEAN      │ DEFAULT true                   │
-│ expires_at      │ TIMESTAMP    │ NULLABLE                       │
-│ title           │ VARCHAR(255) │ NULLABLE                       │
-│ description     │ TEXT         │ NULLABLE                       │
-│ created_at      │ TIMESTAMP    │ DEFAULT now()                  │
-│ updated_at      │ TIMESTAMP    │ DEFAULT now()                  │
-└─────────────────┴──────────────┴────────────────────────────────┘
+FOLDERS                          TAGS                    LINK_TAGS
+├─ id (PK)                       ├─ id (PK)              ├─ link_id (PK, FK)
+├─ user_id (FK)                  ├─ user_id (FK)         └─ tag_id (PK, FK)
+├─ name                          ├─ name
+├─ color                         ├─ color
+├─ icon                          └─ created_at
+├─ parent_id (FK, self)
+└─ sort_order
+```
+
+### Analytics Tables
+
+```sql
+LINK_CLICKS                      LINK_VERSIONS           LINK_HEALTH_CHECKS
+├─ id (PK)                       ├─ id (PK)              ├─ id (PK)
+├─ link_id (FK)                  ├─ link_id (FK)         ├─ link_id (FK)
+├─ clicked_at                    ├─ previous_url         ├─ status_code
+├─ ip_hash                       ├─ previous_slug        ├─ response_time_ms
+├─ user_agent                    ├─ previous_title       ├─ is_healthy
+├─ referrer_domain               ├─ changed_by           ├─ error_message
+├─ device_type                   └─ created_at           └─ checked_at
+├─ browser
+├─ os
+└─ country_code
+```
+
+### Sharing & Activity Tables
+
+```sql
+SHARED_LINKS                     ACTIVITY_LOGS
+├─ id (PK)                       ├─ id (PK)
+├─ link_id (FK)                  ├─ user_id (FK)
+├─ share_token (UNIQUE)          ├─ activity_type
+├─ password_hash                 ├─ resource_type
+├─ expires_at                    ├─ resource_id
+├─ max_views                     ├─ resource_title
+├─ view_count                    ├─ metadata (JSON)
+└─ is_active                     └─ created_at
 ```
 
 ---
 
 ## 🚢 Deployment
 
-### 🚂 Railway Deployment (Recommended)
+### 🚂 Railway (Recommended)
 
 #### One-Click Deploy
 
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/cinbrainlinks)
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/savlink)
 
 #### Manual Deployment
 
 ```bash
-# 1. Install Railway CLI
+# Install Railway CLI
 npm install -g @railway/cli
 
-# 2. Login to Railway
+# Login and initialize
 railway login
-
-# 3. Initialize project
 railway init
 
-# 4. Add PostgreSQL
+# Add services
 railway add --plugin postgresql
-
-# 5. Add Redis
 railway add --plugin redis
 
-# 6. Set environment variables
+# Set environment variables
 railway variables set SECRET_KEY="$(openssl rand -hex 32)"
 railway variables set JWT_SECRET_KEY="$(openssl rand -hex 32)"
-railway variables set FRONTEND_URL="https://your-frontend.vercel.app"
-railway variables set BREVO_API_KEY="xkeysib-your-key"
-railway variables set BREVO_SENDER_EMAIL="noreply@yourdomain.com"
+railway variables set PUBLIC_BASE_URL="https://savlink.vercel.app"
+railway variables set FRONTEND_URL="https://savlink.vercel.app"
 
-# 7. Deploy
+# Deploy
 railway up
-
-# 8. Get your domain
-railway domain
 ```
 
----
-
-### 🐳 Docker Deployment
+### 🐳 Docker
 
 ```bash
-# Build image
-docker build -t cinbrainlinks .
+# Build and run
+docker build -t savlink .
+docker run -d -p 5000:5000 --env-file .env savlink
 
-# Run container
-docker run -d \
-  --name cinbrainlinks \
-  -p 5000:5000 \
-  --env-file .env \
-  cinbrainlinks
-```
-
-**Docker Compose:**
-
-```bash
+# Or with Docker Compose
 docker-compose up -d
 ```
 
----
+### 📋 Deployment Checklist
 
-### 🖥️ Manual Deployment
-
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Set environment variables
-export SECRET_KEY="your-secret-key"
-export DATABASE_URL="postgresql://..."
-# ... other variables
-
-# Run with Gunicorn
-gunicorn wsgi:app \
-  --bind 0.0.0.0:5000 \
-  --workers 4 \
-  --threads 2 \
-  --worker-class gthread \
-  --timeout 120
-```
+- [ ] Set `SECRET_KEY` and `JWT_SECRET_KEY` (production-grade)
+- [ ] Configure `DATABASE_URL` (PostgreSQL)
+- [ ] Set `PUBLIC_BASE_URL` to `https://savlink.vercel.app`
+- [ ] Set `FRONTEND_URL` to `https://savlink.vercel.app`
+- [ ] Configure `REDIS_URL` (optional but recommended)
+- [ ] Set up Brevo for emails (optional)
+- [ ] Run database migrations: `flask db upgrade`
+- [ ] Verify `/health` endpoint returns healthy
 
 ---
 
 ## 📊 Monitoring
 
-### Health Endpoints
+### Health Check
 
-| Endpoint | Description |
-|----------|-------------|
-| `GET /health` | Full health check with DB & Redis status |
-| `GET /` | API info and status |
+```bash
+curl https://your-app.railway.app/health
+```
+
+```json
+{
+  "status": "healthy",
+  "service": "Savlink",
+  "version": "2.0.0",
+  "database": "connected",
+  "cache": "connected"
+}
+```
 
 ### Logging
 
-Logs are output to stdout for Railway's log aggregation:
+Logs are structured and output to stdout:
 
 ```
-2024-01-15 10:30:00 - app - INFO - ✅ Database connected
-2024-01-15 10:30:01 - app - INFO - ✅ Redis connected
-2024-01-15 10:30:02 - app - INFO - ✅ Email service initialized (API)
-2024-01-15 10:30:05 - app - INFO - 🔗 Link created: my-link
-2024-01-15 10:30:10 - app - INFO - ↗️ Redirect: my-link (cache hit)
+2024-01-15 10:30:00 [INFO] Link created: my-link (shortened) by user abc123
+2024-01-15 10:30:05 [INFO] Cache hit for link: my-link
+2024-01-15 10:30:10 [WARNING] Broken link detected: xyz789
 ```
 
-### Sentry Integration (Optional)
+### Sentry Integration
 
 ```bash
-railway variables set SENTRY_DSN="https://your-sentry-dsn@sentry.io/project"
+railway variables set SENTRY_DSN="https://...@sentry.io/..."
 ```
 
 ---
@@ -884,58 +766,40 @@ railway variables set SENTRY_DSN="https://your-sentry-dsn@sentry.io/project"
 # Run all tests
 pytest
 
-# Run with coverage
+# With coverage
 pytest --cov=app --cov-report=html
 
-# Run specific test file
-pytest tests/test_auth.py
-
-# Run with verbose output
-pytest -v
-```
-
-### Test Structure
-
-```
-tests/
-├── conftest.py          # Test fixtures
-├── test_auth.py         # Authentication tests
-├── test_links.py        # Link management tests
-├── test_redirect.py     # Redirect tests
-└── test_validators.py   # Validation tests
+# Specific tests
+pytest tests/test_links.py -v
 ```
 
 ---
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-### Quick Contributing Steps
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md).
 
 ```bash
-# 1. Fork the repository
+# Fork and clone
+git clone https://github.com/yourusername/savlink.git
 
-# 2. Create feature branch
+# Create feature branch
 git checkout -b feature/amazing-feature
 
-# 3. Make changes and commit
+# Commit with conventional commits
 git commit -m "feat: add amazing feature"
 
-# 4. Push to branch
+# Push and create PR
 git push origin feature/amazing-feature
-
-# 5. Open Pull Request
 ```
 
-### Commit Convention
+### Commit Types
 
 | Type | Description |
 |------|-------------|
 | `feat` | New feature |
 | `fix` | Bug fix |
 | `docs` | Documentation |
-| `style` | Code style |
 | `refactor` | Code refactoring |
 | `test` | Tests |
 | `chore` | Maintenance |
@@ -944,9 +808,7 @@ git push origin feature/amazing-feature
 
 ## 📄 License
 
-This project is licensed under the **MIT License**.
-
-See [LICENSE](LICENSE) file for details.
+This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
 
 ---
 
@@ -954,15 +816,14 @@ See [LICENSE](LICENSE) file for details.
 
 ### 💖 Support
 
-If you found this project helpful, please consider:
+If you find Savlink useful:
 
-⭐ **Star this repo** · 🍴 **Fork this repo** · 📢 **Share with others**
+⭐ **Star this repo** · 🍴 **Fork it** · 📢 **Share it**
 
 ---
 
-**Made with ❤️ by the CinBrainLinks Team**
+**Made with ❤️ by the Savlink Team**
 
-[![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github)](https://github.com/yourusername)
-[![Twitter](https://img.shields.io/badge/Twitter-1DA1F2?style=for-the-badge&logo=twitter&logoColor=white)](https://twitter.com/yourusername)
+*Save once. Use forever.*
 
 </div>

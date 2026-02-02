@@ -1,10 +1,5 @@
 # server/app/services/email_service.py
 
-"""
-Email service using Brevo SMTP and API with enhanced deliverability.
-Adapted from CineBrain's production email service.
-"""
-
 import smtplib
 import socket
 import logging
@@ -24,14 +19,9 @@ from flask import current_app, render_template_string
 
 logger = logging.getLogger(__name__)
 
-
-# ============================================
-# EMAIL TEMPLATES FOR CINBRAINLINKS
-# ============================================
-
 TEMPLATES = {
     "welcome": {
-        "subject": "Welcome to CinBrainLinks! 🔗",
+        "subject": "Welcome to Savlink",
         "html": """
 <!DOCTYPE html>
 <html>
@@ -39,89 +29,63 @@ TEMPLATES = {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f4f4; }
-        .wrapper { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .container { background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px 30px; text-align: center; }
-        .header h1 { margin: 0; font-size: 28px; font-weight: 600; }
-        .header p { margin: 10px 0 0; opacity: 0.9; font-size: 16px; }
-        .content { padding: 40px 30px; }
-        .content h2 { color: #333; margin-top: 0; }
-        .feature-list { list-style: none; padding: 0; margin: 25px 0; }
-        .feature-list li { padding: 12px 0; padding-left: 35px; position: relative; border-bottom: 1px solid #eee; }
-        .feature-list li:last-child { border-bottom: none; }
-        .feature-list li::before { content: "✓"; position: absolute; left: 0; color: #667eea; font-weight: bold; font-size: 18px; }
-        .button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white !important; padding: 14px 35px; text-decoration: none; border-radius: 8px; margin: 25px 0; font-weight: 600; font-size: 16px; }
-        .button:hover { opacity: 0.9; }
-        .footer { text-align: center; padding: 25px; color: #888; font-size: 12px; background: #f9f9f9; }
-        .footer a { color: #667eea; text-decoration: none; }
-        .social-links { margin: 15px 0; }
-        .social-links a { margin: 0 10px; color: #667eea; text-decoration: none; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5; }
+        .container { max-width: 560px; margin: 40px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .header { background: #1a1a2e; color: #fff; padding: 32px; text-align: center; }
+        .header h1 { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.5px; }
+        .content { padding: 32px; }
+        .content h2 { margin: 0 0 16px; font-size: 20px; color: #1a1a2e; }
+        .content p { margin: 0 0 16px; color: #555; }
+        .features { margin: 24px 0; padding: 0; }
+        .features li { padding: 8px 0; padding-left: 24px; position: relative; list-style: none; color: #555; }
+        .features li::before { content: "✓"; position: absolute; left: 0; color: #10b981; font-weight: bold; }
+        .button { display: inline-block; background: #1a1a2e; color: #fff !important; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: 500; }
+        .footer { text-align: center; padding: 24px; color: #888; font-size: 13px; border-top: 1px solid #eee; }
     </style>
 </head>
 <body>
-    <div class="wrapper">
-        <div class="container">
-            <div class="header">
-                <h1>🔗 CinBrainLinks</h1>
-                <p>Your Branded URL Shortener</p>
-            </div>
-            <div class="content">
-                <h2>Welcome aboard, {{ user_name }}! 🎉</h2>
-                <p>Thank you for joining <strong>CinBrainLinks</strong>! We're excited to have you on board.</p>
-                <p>With CinBrainLinks, you can:</p>
-                <ul class="feature-list">
-                    <li><strong>Create short, branded links</strong> - Make your URLs memorable</li>
-                    <li><strong>Track click analytics</strong> - See who's clicking your links</li>
-                    <li><strong>Custom slugs</strong> - Use your own custom short URLs</li>
-                    <li><strong>Set expiration dates</strong> - Control how long links stay active</li>
-                    <li><strong>Manage everything</strong> - Enable, disable, or delete links anytime</li>
-                </ul>
-                <p style="text-align: center;">
-                    <a href="{{ dashboard_url }}" class="button">Go to Dashboard →</a>
-                </p>
-                <p>If you have any questions, feel free to reach out to our support team.</p>
-                <p>Happy linking! 🚀</p>
-                <p><strong>The CinBrainLinks Team</strong></p>
-            </div>
-            <div class="footer">
-                <p>© {{ year }} CinBrainLinks. All rights reserved.</p>
-                <p>You received this email because you signed up for CinBrainLinks.</p>
-            </div>
+    <div class="container">
+        <div class="header">
+            <h1>Savlink</h1>
+        </div>
+        <div class="content">
+            <h2>Welcome, {{ user_name }}</h2>
+            <p>Your account is ready. Here's what you can do with Savlink:</p>
+            <ul class="features">
+                <li>Create short, memorable links</li>
+                <li>Track clicks and engagement</li>
+                <li>Organize your link collection</li>
+                <li>Access links from anywhere</li>
+            </ul>
+            <p style="text-align: center; margin-top: 32px;">
+                <a href="{{ dashboard_url }}" class="button">Go to Dashboard</a>
+            </p>
+        </div>
+        <div class="footer">
+            <p>© {{ year }} Savlink</p>
         </div>
     </div>
 </body>
 </html>
         """,
-        "text": """
-Welcome to CinBrainLinks! 🔗
+        "text": """Welcome to Savlink
 
 Hi {{ user_name }},
 
-Thank you for joining CinBrainLinks! We're excited to have you on board.
+Your account is ready. You can now:
+- Create short, memorable links
+- Track clicks and engagement
+- Organize your link collection
+- Access links from anywhere
 
-With CinBrainLinks, you can:
-✓ Create short, branded links - Make your URLs memorable
-✓ Track click analytics - See who's clicking your links
-✓ Custom slugs - Use your own custom short URLs
-✓ Set expiration dates - Control how long links stay active
-✓ Manage everything - Enable, disable, or delete links anytime
+Get started: {{ dashboard_url }}
 
-Ready to get started? Visit your dashboard: {{ dashboard_url }}
-
-If you have any questions, feel free to reach out to our support team.
-
-Happy linking! 🚀
-
-The CinBrainLinks Team
-
----
-© {{ year }} CinBrainLinks. All rights reserved.
+- Savlink
         """
     },
     
     "password_reset": {
-        "subject": "Reset Your CinBrainLinks Password 🔐",
+        "subject": "Reset your Savlink password",
         "html": """
 <!DOCTYPE html>
 <html>
@@ -129,93 +93,68 @@ The CinBrainLinks Team
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f4f4; }
-        .wrapper { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .container { background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px 30px; text-align: center; }
-        .header h1 { margin: 0; font-size: 28px; font-weight: 600; }
-        .content { padding: 40px 30px; }
-        .button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white !important; padding: 14px 35px; text-decoration: none; border-radius: 8px; margin: 25px 0; font-weight: 600; font-size: 16px; }
-        .warning { background: #fff3cd; border: 1px solid #ffc107; padding: 15px 20px; border-radius: 8px; margin: 20px 0; }
-        .warning strong { color: #856404; }
-        .security-note { background: #e8f4fd; border-left: 4px solid #667eea; padding: 15px 20px; margin: 20px 0; border-radius: 0 8px 8px 0; }
-        .footer { text-align: center; padding: 25px; color: #888; font-size: 12px; background: #f9f9f9; }
-        .code-box { background: #f8f9fa; border: 2px dashed #ddd; padding: 15px; text-align: center; font-family: monospace; font-size: 14px; margin: 15px 0; border-radius: 8px; word-break: break-all; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5; }
+        .container { max-width: 560px; margin: 40px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .header { background: #1a1a2e; color: #fff; padding: 32px; text-align: center; }
+        .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+        .content { padding: 32px; }
+        .content p { margin: 0 0 16px; color: #555; }
+        .button { display: inline-block; background: #1a1a2e; color: #fff !important; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: 500; }
+        .notice { background: #fef3c7; border-left: 3px solid #f59e0b; padding: 12px 16px; margin: 24px 0; font-size: 14px; color: #92400e; }
+        .meta { font-size: 13px; color: #888; margin-top: 24px; padding-top: 16px; border-top: 1px solid #eee; }
+        .footer { text-align: center; padding: 24px; color: #888; font-size: 13px; border-top: 1px solid #eee; }
     </style>
 </head>
 <body>
-    <div class="wrapper">
-        <div class="container">
-            <div class="header">
-                <h1>🔐 Password Reset</h1>
+    <div class="container">
+        <div class="header">
+            <h1>Savlink</h1>
+        </div>
+        <div class="content">
+            <p>Hi {{ user_name }},</p>
+            <p>We received a request to reset your password. Click the button below to choose a new one:</p>
+            <p style="text-align: center; margin: 32px 0;">
+                <a href="{{ reset_url }}" class="button">Reset Password</a>
+            </p>
+            <div class="notice">
+                This link expires in 1 hour and can only be used once.
             </div>
-            <div class="content">
-                <p>Hi {{ user_name }},</p>
-                <p>We received a request to reset your CinBrainLinks password. Click the button below to set a new password:</p>
-                <p style="text-align: center;">
-                    <a href="{{ reset_url }}" class="button">Reset Password →</a>
-                </p>
-                <div class="warning">
-                    <strong>⏰ Important:</strong> This link will expire in <strong>1 hour</strong> for security reasons.
-                </div>
-                <p>If the button doesn't work, copy and paste this link into your browser:</p>
-                <div class="code-box">{{ reset_url }}</div>
-                <div class="security-note">
-                    <strong>🔒 Security Notice:</strong>
-                    <ul style="margin: 10px 0 0; padding-left: 20px;">
-                        <li>If you didn't request this password reset, you can safely ignore this email</li>
-                        <li>Your password will remain unchanged</li>
-                        <li>This link can only be used once</li>
-                    </ul>
-                </div>
-                <p>Request details:</p>
-                <ul>
-                    <li><strong>Time:</strong> {{ request_time }}</li>
-                    <li><strong>IP Address:</strong> {{ ip_address }}</li>
-                    <li><strong>Device:</strong> {{ device_info }}</li>
-                </ul>
-                <p><strong>The CinBrainLinks Team</strong></p>
+            <p style="font-size: 14px; color: #666;">If you didn't request this, you can safely ignore this email.</p>
+            <div class="meta">
+                <p><strong>Request details:</strong></p>
+                <p>Time: {{ request_time }}<br>IP: {{ ip_address }}<br>Device: {{ device_info }}</p>
             </div>
-            <div class="footer">
-                <p>© {{ year }} CinBrainLinks. All rights reserved.</p>
-                <p>This is an automated security email from CinBrainLinks.</p>
-            </div>
+        </div>
+        <div class="footer">
+            <p>© {{ year }} Savlink</p>
         </div>
     </div>
 </body>
 </html>
         """,
-        "text": """
-Password Reset Request 🔐
+        "text": """Reset your Savlink password
 
 Hi {{ user_name }},
 
-We received a request to reset your CinBrainLinks password.
+We received a request to reset your password. Visit this link to choose a new one:
 
-Click the link below to set a new password:
 {{ reset_url }}
 
-⏰ IMPORTANT: This link will expire in 1 hour for security reasons.
+This link expires in 1 hour and can only be used once.
 
-🔒 SECURITY NOTICE:
-- If you didn't request this password reset, you can safely ignore this email
-- Your password will remain unchanged
-- This link can only be used once
+If you didn't request this, you can safely ignore this email.
 
 Request details:
 - Time: {{ request_time }}
-- IP Address: {{ ip_address }}
+- IP: {{ ip_address }}
 - Device: {{ device_info }}
 
-The CinBrainLinks Team
-
----
-© {{ year }} CinBrainLinks. All rights reserved.
+- Savlink
         """
     },
     
     "link_expiration_alert": {
-        "subject": "⏰ Your CinBrainLinks Link is Expiring Soon",
+        "subject": "Your Savlink is expiring soon",
         "html": """
 <!DOCTYPE html>
 <html>
@@ -223,101 +162,62 @@ The CinBrainLinks Team
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f4f4; }
-        .wrapper { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .container { background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
-        .header { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 40px 30px; text-align: center; }
-        .header h1 { margin: 0; font-size: 28px; font-weight: 600; }
-        .content { padding: 40px 30px; }
-        .link-box { background: #f8f9fa; border: 1px solid #e9ecef; padding: 20px; border-radius: 10px; margin: 20px 0; }
-        .link-box .label { color: #6c757d; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; }
-        .link-box .value { font-size: 16px; font-weight: 600; color: #333; word-break: break-all; }
-        .stats { display: flex; justify-content: space-around; margin: 20px 0; text-align: center; }
-        .stat-item { padding: 15px; }
-        .stat-value { font-size: 24px; font-weight: bold; color: #667eea; }
-        .stat-label { font-size: 12px; color: #6c757d; text-transform: uppercase; }
-        .button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white !important; padding: 14px 35px; text-decoration: none; border-radius: 8px; margin: 20px 0; font-weight: 600; }
-        .warning { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px 20px; margin: 20px 0; border-radius: 0 8px 8px 0; }
-        .footer { text-align: center; padding: 25px; color: #888; font-size: 12px; background: #f9f9f9; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5; }
+        .container { max-width: 560px; margin: 40px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .header { background: #1a1a2e; color: #fff; padding: 32px; text-align: center; }
+        .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+        .content { padding: 32px; }
+        .content p { margin: 0 0 16px; color: #555; }
+        .link-box { background: #f8f9fa; border: 1px solid #e9ecef; padding: 16px; border-radius: 8px; margin: 20px 0; }
+        .link-box .label { color: #6c757d; font-size: 12px; text-transform: uppercase; margin-bottom: 4px; }
+        .link-box .value { font-size: 14px; color: #333; word-break: break-all; }
+        .button { display: inline-block; background: #1a1a2e; color: #fff !important; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: 500; }
+        .footer { text-align: center; padding: 24px; color: #888; font-size: 13px; border-top: 1px solid #eee; }
     </style>
 </head>
 <body>
-    <div class="wrapper">
-        <div class="container">
-            <div class="header">
-                <h1>⏰ Link Expiring Soon</h1>
+    <div class="container">
+        <div class="header">
+            <h1>Savlink</h1>
+        </div>
+        <div class="content">
+            <p>Hi {{ user_name }},</p>
+            <p>One of your links is about to expire:</p>
+            <div class="link-box">
+                <div class="label">Short URL</div>
+                <div class="value">{{ short_url }}</div>
+                <div class="label" style="margin-top: 12px;">Expires</div>
+                <div class="value" style="color: #dc3545;">{{ expires_at }}</div>
             </div>
-            <div class="content">
-                <p>Hi {{ user_name }},</p>
-                <p>One of your CinBrainLinks is about to expire:</p>
-                
-                <div class="link-box">
-                    <div style="margin-bottom: 15px;">
-                        <div class="label">Short URL</div>
-                        <div class="value">{{ short_url }}</div>
-                    </div>
-                    <div style="margin-bottom: 15px;">
-                        <div class="label">Original URL</div>
-                        <div class="value">{{ original_url }}</div>
-                    </div>
-                    <div>
-                        <div class="label">Expires</div>
-                        <div class="value" style="color: #dc3545;">{{ expires_at }}</div>
-                    </div>
-                </div>
-                
-                <div class="stats">
-                    <div class="stat-item">
-                        <div class="stat-value">{{ click_count }}</div>
-                        <div class="stat-label">Total Clicks</div>
-                    </div>
-                </div>
-                
-                <div class="warning">
-                    <strong>⚠️ Action Required:</strong> If you want to keep this link active, please extend its expiration date from your dashboard before it expires.
-                </div>
-                
-                <p style="text-align: center;">
-                    <a href="{{ dashboard_url }}" class="button">Manage Link →</a>
-                </p>
-                
-                <p><strong>The CinBrainLinks Team</strong></p>
-            </div>
-            <div class="footer">
-                <p>© {{ year }} CinBrainLinks. All rights reserved.</p>
-                <p>You're receiving this because you have expiring links in your account.</p>
-            </div>
+            <p>To keep this link active, extend its expiration from your dashboard.</p>
+            <p style="text-align: center; margin-top: 24px;">
+                <a href="{{ dashboard_url }}" class="button">Manage Link</a>
+            </p>
+        </div>
+        <div class="footer">
+            <p>© {{ year }} Savlink</p>
         </div>
     </div>
 </body>
 </html>
         """,
-        "text": """
-⏰ Link Expiring Soon
+        "text": """Your Savlink is expiring soon
 
 Hi {{ user_name }},
 
-One of your CinBrainLinks is about to expire:
+One of your links is about to expire:
 
-SHORT URL: {{ short_url }}
-ORIGINAL URL: {{ original_url }}
-EXPIRES: {{ expires_at }}
-TOTAL CLICKS: {{ click_count }}
+Short URL: {{ short_url }}
+Expires: {{ expires_at }}
 
-⚠️ ACTION REQUIRED:
-If you want to keep this link active, please extend its expiration date from your dashboard before it expires.
+To keep this link active, extend its expiration from your dashboard: {{ dashboard_url }}
 
-Manage your link: {{ dashboard_url }}
-
-The CinBrainLinks Team
-
----
-© {{ year }} CinBrainLinks. All rights reserved.
+- Savlink
         """
     },
     
-    "link_expired": {
-        "subject": "Your CinBrainLinks Link Has Expired",
+    "link_expiration_warning": {
+        "subject": "Your Savlink expires in {{ hours }} hours",
         "html": """
 <!DOCTYPE html>
 <html>
@@ -325,145 +225,279 @@ The CinBrainLinks Team
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f4f4; }
-        .wrapper { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .container { background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
-        .header { background: linear-gradient(135deg, #6c757d 0%, #495057 100%); color: white; padding: 40px 30px; text-align: center; }
-        .header h1 { margin: 0; font-size: 28px; font-weight: 600; }
-        .content { padding: 40px 30px; }
-        .link-box { background: #f8f9fa; border: 1px solid #e9ecef; padding: 20px; border-radius: 10px; margin: 20px 0; opacity: 0.8; }
-        .link-box .label { color: #6c757d; font-size: 12px; text-transform: uppercase; }
-        .link-box .value { font-size: 16px; color: #6c757d; text-decoration: line-through; }
-        .button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white !important; padding: 14px 35px; text-decoration: none; border-radius: 8px; margin: 20px 0; font-weight: 600; }
-        .footer { text-align: center; padding: 25px; color: #888; font-size: 12px; background: #f9f9f9; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5; }
+        .container { max-width: 560px; margin: 40px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .header { background: #1a1a2e; color: #fff; padding: 32px; text-align: center; }
+        .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+        .content { padding: 32px; }
+        .content p { margin: 0 0 16px; color: #555; }
+        .link-card { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 16px; margin: 20px 0; }
+        .link-card .title { font-weight: 600; color: #1a1a2e; margin-bottom: 4px; }
+        .link-card .url { color: #666; font-size: 14px; word-break: break-all; }
+        .link-card .expires { color: #dc3545; font-size: 14px; margin-top: 8px; }
+        .button { display: inline-block; background: #1a1a2e; color: #fff !important; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: 500; }
+        .footer { text-align: center; padding: 24px; color: #888; font-size: 13px; border-top: 1px solid #eee; }
     </style>
 </head>
 <body>
-    <div class="wrapper">
-        <div class="container">
-            <div class="header">
-                <h1>Link Expired</h1>
+    <div class="container">
+        <div class="header">
+            <h1>Savlink</h1>
+        </div>
+        <div class="content">
+            <p>Hi {{ user_name }},</p>
+            <p>Your shortened link is about to expire:</p>
+            <div class="link-card">
+                <div class="title">{{ link_title }}</div>
+                <div class="url">{{ short_url }}</div>
+                <div class="expires">Expires in {{ hours }} hours</div>
             </div>
-            <div class="content">
-                <p>Hi {{ user_name }},</p>
-                <p>Your CinBrainLinks link has expired and is no longer active:</p>
-                
-                <div class="link-box">
-                    <div style="margin-bottom: 10px;">
-                        <div class="label">Short URL (Expired)</div>
-                        <div class="value">{{ short_url }}</div>
-                    </div>
-                    <div>
-                        <div class="label">Expired On</div>
-                        <div class="value" style="text-decoration: none;">{{ expires_at }}</div>
-                    </div>
-                </div>
-                
-                <p>Don't worry! You can create a new link with the same destination or reactivate this one by updating the expiration date.</p>
-                
-                <p style="text-align: center;">
-                    <a href="{{ dashboard_url }}" class="button">Go to Dashboard →</a>
-                </p>
-                
-                <p><strong>The CinBrainLinks Team</strong></p>
-            </div>
-            <div class="footer">
-                <p>© {{ year }} CinBrainLinks. All rights reserved.</p>
-            </div>
+            <p>After expiration, this link will no longer redirect to its destination.</p>
+            <p style="text-align: center; margin-top: 24px;">
+                <a href="{{ dashboard_url }}" class="button">Extend Link</a>
+            </p>
+        </div>
+        <div class="footer">
+            <p>© {{ year }} Savlink</p>
         </div>
     </div>
 </body>
 </html>
         """,
-        "text": """
-Link Expired
+        "text": """Your Savlink expires in {{ hours }} hours
 
 Hi {{ user_name }},
 
-Your CinBrainLinks link has expired and is no longer active:
+Your shortened link is about to expire:
 
-SHORT URL (Expired): {{ short_url }}
-EXPIRED ON: {{ expires_at }}
+{{ link_title }}
+{{ short_url }}
+Expires in {{ hours }} hours
 
-Don't worry! You can create a new link with the same destination or reactivate this one by updating the expiration date.
+After expiration, this link will no longer redirect.
 
-Go to Dashboard: {{ dashboard_url }}
+Extend it here: {{ dashboard_url }}
 
-The CinBrainLinks Team
+- Savlink
+        """
+    },
+    
+    "broken_link_alert": {
+        "subject": "Broken link detected in your Savlink",
+        "html": """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5; }
+        .container { max-width: 560px; margin: 40px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .header { background: #1a1a2e; color: #fff; padding: 32px; text-align: center; }
+        .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+        .content { padding: 32px; }
+        .content p { margin: 0 0 16px; color: #555; }
+        .alert { background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px; margin: 20px 0; }
+        .alert .title { font-weight: 600; color: #856404; margin-bottom: 4px; }
+        .alert .url { color: #666; font-size: 14px; word-break: break-all; }
+        .alert .error { color: #dc3545; font-size: 14px; margin-top: 8px; }
+        .button { display: inline-block; background: #1a1a2e; color: #fff !important; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: 500; }
+        .footer { text-align: center; padding: 24px; color: #888; font-size: 13px; border-top: 1px solid #eee; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Savlink</h1>
+        </div>
+        <div class="content">
+            <p>Hi {{ user_name }},</p>
+            <p>We detected a broken link in your collection:</p>
+            <div class="alert">
+                <div class="title">{{ link_title }}</div>
+                <div class="url">{{ original_url }}</div>
+                <div class="error">Error: {{ error_message }}</div>
+            </div>
+            <p>This link may have been moved, deleted, or the server is temporarily unavailable.</p>
+            <p style="text-align: center; margin-top: 24px;">
+                <a href="{{ dashboard_url }}" class="button">Fix Link</a>
+            </p>
+        </div>
+        <div class="footer">
+            <p>© {{ year }} Savlink</p>
+        </div>
+    </div>
+</body>
+</html>
+        """,
+        "text": """Broken link detected in your Savlink
 
----
-© {{ year }} CinBrainLinks. All rights reserved.
+Hi {{ user_name }},
+
+We detected a broken link in your collection:
+
+{{ link_title }}
+{{ original_url }}
+Error: {{ error_message }}
+
+This link may have been moved, deleted, or temporarily unavailable.
+
+Fix it here: {{ dashboard_url }}
+
+- Savlink
+        """
+    },
+    
+    "weekly_digest": {
+        "subject": "Your Savlink Weekly Digest",
+        "html": """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5; }
+        .container { max-width: 560px; margin: 40px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .header { background: #1a1a2e; color: #fff; padding: 32px; text-align: center; }
+        .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+        .content { padding: 32px; }
+        .stats { display: flex; justify-content: space-around; margin: 24px 0; }
+        .stat { text-align: center; }
+        .stat .number { font-size: 32px; font-weight: 700; color: #1a1a2e; }
+        .stat .label { font-size: 12px; color: #888; text-transform: uppercase; }
+        .section { margin: 24px 0; }
+        .section h3 { margin: 0 0 12px; font-size: 16px; color: #1a1a2e; }
+        .link-item { padding: 8px 0; border-bottom: 1px solid #eee; }
+        .link-item:last-child { border-bottom: none; }
+        .link-item .title { font-weight: 500; }
+        .link-item .clicks { color: #888; font-size: 14px; }
+        .button { display: inline-block; background: #1a1a2e; color: #fff !important; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: 500; }
+        .footer { text-align: center; padding: 24px; color: #888; font-size: 13px; border-top: 1px solid #eee; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Weekly Digest</h1>
+        </div>
+        <div class="content">
+            <p>Hi {{ user_name }},</p>
+            <p>Here's your Savlink activity for the past week:</p>
+            
+            <div class="stats">
+                <div class="stat">
+                    <div class="number">{{ total_links }}</div>
+                    <div class="label">Total Links</div>
+                </div>
+                <div class="stat">
+                    <div class="number">{{ new_links }}</div>
+                    <div class="label">New Links</div>
+                </div>
+                <div class="stat">
+                    <div class="number">{{ total_clicks }}</div>
+                    <div class="label">Total Clicks</div>
+                </div>
+            </div>
+            
+            {% if top_links %}
+            <div class="section">
+                <h3>Top Performing Links</h3>
+                {% for link in top_links %}
+                <div class="link-item">
+                    <div class="title">{{ link.title }}</div>
+                    <div class="clicks">{{ link.clicks }} clicks</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            
+            <p style="text-align: center; margin-top: 24px;">
+                <a href="{{ dashboard_url }}" class="button">View Dashboard</a>
+            </p>
+        </div>
+        <div class="footer">
+            <p>© {{ year }} Savlink</p>
+        </div>
+    </div>
+</body>
+</html>
+        """,
+        "text": """Your Savlink Weekly Digest
+
+Hi {{ user_name }},
+
+Here's your activity for the past week:
+
+Total Links: {{ total_links }}
+New Links: {{ new_links }}
+Total Clicks: {{ total_clicks }}
+
+{% if top_links %}
+Top Performing Links:
+{% for link in top_links %}
+- {{ link.title }}: {{ link.clicks }} clicks
+{% endfor %}
+{% endif %}
+
+View Dashboard: {{ dashboard_url }}
+
+- Savlink
         """
     }
 }
 
 
 class BrevoEmailService:
-    """
-    Email service using Brevo SMTP and API with enhanced deliverability.
-    Supports both SMTP and API methods with automatic fallback.
-    """
-
     _instance = None
     _redis_client = None
 
     def __new__(cls):
-        """Singleton pattern to ensure single email service instance."""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
 
     def __init__(self):
-        """Initialize email service with configuration from Flask app."""
         if self._initialized:
             return
             
         self._initialized = True
         
-        # Configuration from Flask app
         self.smtp_server = current_app.config.get("BREVO_SMTP_SERVER", "smtp-relay.brevo.com")
         self.smtp_port = current_app.config.get("BREVO_SMTP_PORT", 587)
         self.smtp_username = current_app.config.get("BREVO_SMTP_USERNAME")
         self.smtp_password = current_app.config.get("BREVO_SMTP_PASSWORD")
         self.api_key = current_app.config.get("BREVO_API_KEY")
         
-        self.sender_email = current_app.config.get("BREVO_SENDER_EMAIL", "noreply@cinbrainlinks.com")
-        self.sender_name = current_app.config.get("BREVO_SENDER_NAME", "CinBrainLinks")
+        self.sender_email = current_app.config.get("BREVO_SENDER_EMAIL", "noreply@savlink.app")
+        self.sender_name = current_app.config.get("BREVO_SENDER_NAME", "Savlink")
         self.reply_to_email = current_app.config.get("REPLY_TO_EMAIL", self.sender_email)
         
-        self.frontend_url = current_app.config.get("FRONTEND_URL", "http://cinebrainlinks.vercel.app")
+        self.frontend_url = current_app.config.get("FRONTEND_URL", "http://localhost:3000")
         self.base_url = current_app.config.get("BASE_URL", "http://localhost:5000")
         self.environment = current_app.config.get("FLASK_ENV", "development")
         
-        # API Configuration
         self.api_base_url = "https://api.brevo.com/v3"
         
-        # Service status
         self.email_enabled = False
         self.smtp_enabled = False
         self.api_enabled = False
         self.is_configured = False
         
-        # Initialize Redis connection
         self._init_redis()
-        
-        # Initialize email service based on environment
         self._initialize_email_service()
         
         if self.email_enabled:
             self._start_email_worker()
-            logger.info("✅ Brevo email worker initialized successfully")
-            self._log_sender_info()
+            logger.info("Email service initialized")
         else:
-            logger.warning("⚠️ Email service disabled - no valid configuration found")
+            logger.warning("Email service disabled - no valid configuration")
 
     def _init_redis(self):
-        """Initialize Redis connection for email queue."""
         try:
             redis_url = current_app.config.get("REDIS_URL")
             if not redis_url:
-                logger.warning("Redis URL not configured for email service")
                 return
             
             url = urlparse(redis_url)
@@ -478,111 +512,57 @@ class BrevoEmailService:
                 ssl=url.scheme == 'rediss'
             )
             BrevoEmailService._redis_client.ping()
-            logger.info("✅ Email service Redis connected")
             
         except Exception as e:
-            logger.error(f"❌ Email service Redis connection failed: {e}")
+            logger.error(f"Email service Redis connection failed: {e}")
             BrevoEmailService._redis_client = None
 
     @property
     def redis_client(self):
         return BrevoEmailService._redis_client
 
-    def _log_sender_info(self):
-        """Log sender configuration for debugging."""
-        logger.info(f"📧 Email Configuration:")
-        logger.info(f"   Sender: {self.sender_name} <{self.sender_email}>")
-        logger.info(f"   Reply-To: {self.reply_to_email}")
-        logger.info(f"   Environment: {self.environment}")
-        logger.info(f"   Method: {'SMTP' if self.smtp_enabled else 'API' if self.api_enabled else 'None'}")
-
     def _initialize_email_service(self):
-        """Initialize email service - API first in production, SMTP first in development."""
+        if self.api_key and self.sender_email:
+            self.api_enabled = self._test_api_connection()
+            if self.api_enabled:
+                logger.info("Using Brevo API for email delivery")
+                self.email_enabled = True
+                self.is_configured = True
+                return
         
-        # In production, prefer API over SMTP (many hosts block SMTP ports)
-        if self.environment == 'production':
-            # Try API first in production
-            if self.api_key and self.sender_email:
-                self.api_enabled = self._test_api_connection()
-                if self.api_enabled:
-                    logger.info("✅ Using Brevo API for email delivery (Production)")
-                    self.email_enabled = True
-                    self.is_configured = True
-                    return
-            
-            # Try SMTP as fallback
-            if self.smtp_username and self.smtp_password:
-                self.smtp_enabled = self._test_smtp_connection_safe()
-                if self.smtp_enabled:
-                    logger.info("✅ Using Brevo SMTP for email delivery (Production)")
-                    self.email_enabled = True
-                    self.is_configured = True
-                    return
-        else:
-            # Development - try API first since SMTP might be blocked
-            if self.api_key and self.sender_email:
-                self.api_enabled = self._test_api_connection()
-                if self.api_enabled:
-                    logger.info("✅ Using Brevo API for email delivery (Development)")
-                    self.email_enabled = True
-                    self.is_configured = True
-                    return
-            
-            # Try SMTP as fallback
-            if self.smtp_username and self.smtp_password:
-                self.smtp_enabled = self._test_smtp_connection_safe()
-                if self.smtp_enabled:
-                    logger.info("✅ Using Brevo SMTP for email delivery (Development)")
-                    self.email_enabled = True
-                    self.is_configured = True
-                    return
-        
-        # No valid configuration
-        if not self.smtp_username and not self.api_key:
-            logger.warning("⚠️ Neither SMTP nor API credentials configured")
-        elif self.environment == 'production' and not self.api_key:
-            logger.warning("⚠️ In production environment - Brevo API key recommended")
+        if self.smtp_username and self.smtp_password:
+            self.smtp_enabled = self._test_smtp_connection_safe()
+            if self.smtp_enabled:
+                logger.info("Using Brevo SMTP for email delivery")
+                self.email_enabled = True
+                self.is_configured = True
+                return
 
     def _test_smtp_connection_safe(self) -> bool:
-        """Test SMTP connectivity with timeout protection."""
         try:
-            logger.info(f"Testing SMTP connection to {self.smtp_server}:{self.smtp_port}")
-            
             timeout = 5 if self.environment == 'production' else 10
             
-            # Test if port is reachable
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(timeout)
             result = sock.connect_ex((self.smtp_server, self.smtp_port))
             sock.close()
             
             if result != 0:
-                logger.warning(f"⚠️ SMTP port {self.smtp_port} appears to be blocked")
                 return False
             
-            # Test actual SMTP connection
             server = smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=timeout)
             server.starttls()
             server.login(self.smtp_username, self.smtp_password)
             server.quit()
             
-            logger.info("✅ Brevo SMTP connection successful")
             return True
             
-        except socket.timeout:
-            logger.warning(f"⚠️ SMTP connection timed out - port might be blocked")
-            return False
-        except socket.error as e:
-            logger.warning(f"⚠️ SMTP socket error: {e}")
-            return False
         except Exception as e:
-            logger.error(f"❌ Brevo SMTP connection failed: {e}")
+            logger.warning(f"SMTP connection test failed: {e}")
             return False
 
     def _test_api_connection(self) -> bool:
-        """Test Brevo API connectivity."""
         if not self.api_key:
-            logger.warning("⚠️ No Brevo API key configured")
             return False
             
         try:
@@ -598,26 +578,14 @@ class BrevoEmailService:
                 timeout=10
             )
             
-            if response.status_code == 200:
-                logger.info("✅ Brevo API connected successfully")
-                return True
-            else:
-                logger.warning(f"⚠️ Brevo API test failed: {response.status_code}")
-                if response.status_code == 401:
-                    logger.error("❌ Invalid API key")
-                return False
+            return response.status_code == 200
                 
-        except requests.exceptions.Timeout:
-            logger.error("❌ Brevo API connection timeout")
-            return False
         except Exception as e:
-            logger.error(f"❌ Brevo API connection test failed: {e}")
+            logger.error(f"Brevo API connection test failed: {e}")
             return False
 
     def _start_email_worker(self):
-        """Background worker to process queued emails."""
         def worker():
-            # Need to create app context for the worker thread
             from flask import current_app
             app = current_app._get_current_object()
             
@@ -625,7 +593,7 @@ class BrevoEmailService:
                 try:
                     with app.app_context():
                         if self.redis_client and self.email_enabled:
-                            email_json = self.redis_client.lpop('cinbrainlinks:email_queue')
+                            email_json = self.redis_client.lpop('savlink:email_queue')
                             if email_json:
                                 email_data = json.loads(email_json)
                                 self._send_email(email_data)
@@ -637,16 +605,14 @@ class BrevoEmailService:
                     logger.error(f"Email worker error: {e}")
                     time.sleep(5)
 
-        thread = threading.Thread(target=worker, daemon=True, name="BrevoEmailWorker")
+        thread = threading.Thread(target=worker, daemon=True, name="SavlinkEmailWorker")
         thread.start()
 
     def _send_email(self, email_data: Dict, retry_count: int = 0):
-        """Send email using available method."""
         if not self.email_enabled:
             self._store_fallback_email(email_data)
             return False
         
-        # Use whichever method is enabled
         if self.api_enabled:
             success = self._send_email_api(email_data, retry_count)
             if success:
@@ -657,12 +623,10 @@ class BrevoEmailService:
             if success:
                 return True
         
-        # Store as fallback if both fail
         self._store_fallback_email(email_data)
         return False
 
     def _send_email_smtp(self, email_data: Dict, retry_count: int = 0) -> bool:
-        """Send email using SMTP with enhanced headers."""
         try:
             timeout = 10 if self.environment == 'production' else 30
             
@@ -671,17 +635,9 @@ class BrevoEmailService:
             message["From"] = f"{self.sender_name} <{self.sender_email}>"
             message["To"] = email_data['to']
             message["Reply-To"] = self.reply_to_email
-            
-            # Enhanced headers for deliverability
-            message["X-Mailer"] = "CinBrainLinks/1.0"
-            message["X-Priority"] = "3"
-            message["Importance"] = "Normal"
-            message["Message-ID"] = f"<{uuid.uuid4()}@cinbrainlinks.com>"
+            message["X-Mailer"] = "Savlink/1.0"
+            message["Message-ID"] = f"<{uuid.uuid4()}@savlink.app>"
             message["Date"] = datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S +0000')
-            
-            # List-Unsubscribe headers
-            message["List-Unsubscribe"] = f"<{self.frontend_url}/unsubscribe>"
-            message["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
             
             if email_data.get('text'):
                 message.attach(MIMEText(email_data['text'], "plain", "utf-8"))
@@ -695,27 +651,18 @@ class BrevoEmailService:
             server.send_message(message)
             server.quit()
             
-            logger.info(f"✅ Email sent via SMTP to {email_data['to']}")
+            logger.info(f"Email sent via SMTP to {email_data['to']}")
             self._store_sent_status(email_data, 'smtp')
             return True
             
-        except (socket.timeout, socket.error) as e:
-            logger.warning(f"⚠️ SMTP network error: {e}")
-            if self.environment != 'production' and retry_count < 1:
-                time.sleep(2)
-                return self._send_email_smtp(email_data, retry_count + 1)
-            return False
-            
         except Exception as e:
-            logger.error(f"❌ SMTP send failed to {email_data['to']}: {e}")
-            max_retries = 1 if self.environment == 'production' else 2
-            if retry_count < max_retries:
+            logger.error(f"SMTP send failed: {e}")
+            if retry_count < 2:
                 time.sleep(2 ** retry_count)
                 return self._send_email_smtp(email_data, retry_count + 1)
             return False
 
     def _send_email_api(self, email_data: Dict, retry_count: int = 0) -> bool:
-        """Send email using Brevo API."""
         if not self.api_key:
             return False
             
@@ -737,12 +684,7 @@ class BrevoEmailService:
             'subject': email_data['subject'],
             'htmlContent': email_data.get('html', '<p>No HTML content</p>'),
             'textContent': email_data.get('text', 'No text content'),
-            'headers': {
-                'X-Mailer': 'CinBrainLinks/1.0',
-                'X-Priority': '3',
-                'List-Unsubscribe': f'<{self.frontend_url}/unsubscribe>'
-            },
-            'tags': ['transactional', 'cinbrainlinks']
+            'tags': ['transactional', 'savlink']
         }
         
         if self.reply_to_email:
@@ -762,31 +704,29 @@ class BrevoEmailService:
             if response.status_code == 201:
                 res = response.json()
                 message_id = res.get('messageId', 'sent')
-                logger.info(f"✅ Email sent via API to {email_data['to']} (ID: {message_id})")
+                logger.info(f"Email sent via API to {email_data['to']} (ID: {message_id})")
                 self._store_sent_status(email_data, 'api', message_id)
                 return True
             else:
-                logger.warning(f"⚠️ API returned {response.status_code}: {response.text}")
                 if retry_count < 2:
                     time.sleep(2 ** retry_count)
                     return self._send_email_api(email_data, retry_count + 1)
                 return False
                     
         except Exception as e:
-            logger.error(f"❌ API request failed: {e}")
+            logger.error(f"API request failed: {e}")
             if retry_count < 2:
                 time.sleep(2 ** retry_count)
                 return self._send_email_api(email_data, retry_count + 1)
             return False
 
     def _store_sent_status(self, email_data: Dict, method: str, message_id: str = None):
-        """Store sent email status in Redis."""
         if not self.redis_client:
             return
             
         try:
             self.redis_client.setex(
-                f"cinbrainlinks:email_sent:{email_data['id']}",
+                f"savlink:email_sent:{email_data['id']}",
                 86400,
                 json.dumps({
                     'status': 'sent',
@@ -797,33 +737,28 @@ class BrevoEmailService:
                     'message_id': message_id
                 })
             )
-        except Exception as e:
-            logger.warning(f"Failed to store sent status: {e}")
+        except Exception:
+            pass
 
     def _store_fallback_email(self, email_data: Dict):
-        """Store unsent email in fallback queue."""
         if not self.redis_client:
-            logger.warning(f"📧 Fallback email for {email_data['to']}")
+            logger.warning(f"Fallback email for {email_data['to']}")
             if email_data.get('reset_token'):
                 reset_url = f"{self.frontend_url}/reset-password?token={email_data['reset_token']}"
-                logger.info(f"🔗 Password reset link: {reset_url}")
+                logger.info(f"Password reset link: {reset_url}")
             return
             
         email_data['failed_at'] = datetime.utcnow().isoformat()
-        email_data['environment'] = self.environment
         
-        key = f"cinbrainlinks:email_fallback:{uuid.uuid4()}"
-        self.redis_client.setex(key, 604800, json.dumps(email_data))  # 7 days
-        self.redis_client.rpush('cinbrainlinks:email_fallback_queue', key)
-        logger.info(f"📥 Stored unsent email for {email_data['to']} in fallback queue")
+        key = f"savlink:email_fallback:{uuid.uuid4()}"
+        self.redis_client.setex(key, 604800, json.dumps(email_data))
+        self.redis_client.rpush('savlink:email_fallback_queue', key)
 
     def _render_template(self, template_name: str, context: dict) -> tuple:
-        """Render email template with context."""
         template = TEMPLATES.get(template_name)
         if not template:
             raise ValueError(f"Unknown template: {template_name}")
         
-        # Add common context
         context.setdefault("year", datetime.now().year)
         context.setdefault("dashboard_url", f"{self.frontend_url}/dashboard")
         context.setdefault("frontend_url", self.frontend_url)
@@ -844,7 +779,6 @@ class BrevoEmailService:
         reset_token: str = None,
         to_name: str = ""
     ) -> bool:
-        """Queue email to be sent asynchronously."""
         email_id = str(uuid.uuid4())
         
         if not to_name:
@@ -863,24 +797,21 @@ class BrevoEmailService:
         }
 
         if not self.email_enabled:
-            logger.warning(f"Email service disabled - providing fallback for {to}")
             self._store_fallback_email(email_data)
             
             if reset_token:
                 reset_url = f"{self.frontend_url}/reset-password?token={reset_token}"
-                logger.info(f"🔗 Password reset link for {to}: {reset_url}")
+                logger.info(f"Password reset link for {to}: {reset_url}")
             
             return True
 
         if self.redis_client:
-            queue_key = 'cinbrainlinks:email_queue'
+            queue_key = 'savlink:email_queue'
             if priority == 'high':
                 self.redis_client.lpush(queue_key, json.dumps(email_data))
             else:
                 self.redis_client.rpush(queue_key, json.dumps(email_data))
-            logger.info(f"📧 Queued email for {to} (ID: {email_id})")
         else:
-            # If no Redis, send directly in background thread
             threading.Thread(
                 target=self._send_email,
                 args=(email_data,),
@@ -889,17 +820,12 @@ class BrevoEmailService:
         
         return True
 
-    # ============================================
-    # PUBLIC API METHODS FOR CINBRAINLINKS
-    # ============================================
-
     def send_welcome_email(
         self,
         to_email: str,
         user_name: str = None,
         async_send: bool = True
     ) -> bool:
-        """Send welcome email to new user."""
         try:
             if not user_name:
                 user_name = to_email.split('@')[0].replace('.', ' ').title()
@@ -939,7 +865,6 @@ class BrevoEmailService:
         request_info: dict = None,
         async_send: bool = True
     ) -> bool:
-        """Send password reset email."""
         try:
             if not user_name:
                 user_name = to_email.split('@')[0].replace('.', ' ').title()
@@ -993,7 +918,6 @@ class BrevoEmailService:
         user_name: str = None,
         async_send: bool = True
     ) -> bool:
-        """Send link expiration alert email."""
         try:
             if not user_name:
                 user_name = to_email.split('@')[0].replace('.', ' ').title()
@@ -1034,29 +958,30 @@ class BrevoEmailService:
             logger.error(f"Failed to send link expiration alert: {e}")
             return False
 
-    def send_link_expired_notification(
+    def send_expiration_warning(
         self,
         to_email: str,
+        link_title: str,
         short_url: str,
-        expires_at: str,
+        hours_remaining: int,
         user_name: str = None,
         async_send: bool = True
     ) -> bool:
-        """Send notification when link has expired."""
         try:
             if not user_name:
                 user_name = to_email.split('@')[0].replace('.', ' ').title()
-            
+
             context = {
                 "user_name": user_name,
+                "link_title": link_title or short_url,
                 "short_url": short_url,
-                "expires_at": expires_at
+                "hours": hours_remaining
             }
-            
+
             subject, html_content, text_content = self._render_template(
-                "link_expired", context
+                "link_expiration_warning", context
             )
-            
+
             if async_send:
                 return self.queue_email(
                     to=to_email,
@@ -1076,37 +1001,110 @@ class BrevoEmailService:
                     'timestamp': datetime.utcnow().isoformat()
                 }
                 return self._send_email(email_data)
-                
+
         except Exception as e:
-            logger.error(f"Failed to send link expired notification: {e}")
+            logger.error(f"Failed to send expiration warning: {e}")
             return False
 
-    def get_email_status(self, email_id: str) -> Dict:
-        """Get email delivery status."""
-        if not self.redis_client:
-            return {'status': 'unknown', 'id': email_id}
-        
+    def send_broken_link_alert(
+        self,
+        to_email: str,
+        link_title: str,
+        original_url: str,
+        error_message: str,
+        user_name: str = None,
+        async_send: bool = True
+    ) -> bool:
         try:
-            # Check sent emails
-            sent_data = self.redis_client.get(f"cinbrainlinks:email_sent:{email_id}")
-            if sent_data:
-                return json.loads(sent_data)
-            
-            # Check fallback queue
-            fallback_data = self.redis_client.get(f"cinbrainlinks:email_fallback:{email_id}")
-            if fallback_data:
-                data = json.loads(fallback_data)
-                data['status'] = 'fallback'
-                return data
-            
-            return {'status': 'not_found', 'id': email_id}
-            
+            if not user_name:
+                user_name = to_email.split('@')[0].replace('.', ' ').title()
+
+            context = {
+                "user_name": user_name,
+                "link_title": link_title or original_url[:50],
+                "original_url": original_url,
+                "error_message": error_message
+            }
+
+            subject, html_content, text_content = self._render_template(
+                "broken_link_alert", context
+            )
+
+            if async_send:
+                return self.queue_email(
+                    to=to_email,
+                    subject=subject,
+                    html=html_content,
+                    text=text_content,
+                    to_name=user_name
+                )
+            else:
+                email_data = {
+                    'id': str(uuid.uuid4()),
+                    'to': to_email,
+                    'to_name': user_name,
+                    'subject': subject,
+                    'html': html_content,
+                    'text': text_content,
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+                return self._send_email(email_data)
+
         except Exception as e:
-            logger.error(f"Error getting email status: {e}")
-            return {'status': 'error', 'id': email_id}
+            logger.error(f"Failed to send broken link alert: {e}")
+            return False
+
+    def send_weekly_digest(
+        self,
+        to_email: str,
+        total_links: int,
+        new_links: int,
+        total_clicks: int,
+        top_links: list,
+        user_name: str = None,
+        async_send: bool = True
+    ) -> bool:
+        try:
+            if not user_name:
+                user_name = to_email.split('@')[0].replace('.', ' ').title()
+
+            context = {
+                "user_name": user_name,
+                "total_links": total_links,
+                "new_links": new_links,
+                "total_clicks": total_clicks,
+                "top_links": top_links
+            }
+
+            subject, html_content, text_content = self._render_template(
+                "weekly_digest", context
+            )
+
+            if async_send:
+                return self.queue_email(
+                    to=to_email,
+                    subject=subject,
+                    html=html_content,
+                    text=text_content,
+                    to_name=user_name
+                )
+            else:
+                email_data = {
+                    'id': str(uuid.uuid4()),
+                    'to': to_email,
+                    'to_name': user_name,
+                    'subject': subject,
+                    'html': html_content,
+                    'text': text_content,
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+                return self._send_email(email_data)
+
+        except Exception as e:
+            logger.error(f"Failed to send weekly digest: {e}")
+            return False
 
     def get_queue_stats(self) -> Dict:
-        """Get email queue statistics."""
         stats = {
             'queue_size': 0,
             'fallback_queue_size': 0,
@@ -1114,44 +1112,33 @@ class BrevoEmailService:
             'api_enabled': self.api_enabled,
             'email_enabled': self.email_enabled,
             'environment': self.environment,
-            'sender': self.sender_email,
-            'sender_name': self.sender_name
+            'sender': self.sender_email
         }
         
         if not self.redis_client:
             return stats
             
         try:
-            stats['queue_size'] = self.redis_client.llen('cinbrainlinks:email_queue')
-            stats['fallback_queue_size'] = self.redis_client.llen('cinbrainlinks:email_fallback_queue')
-            
-            # Count sent emails in last 24h
-            keys = self.redis_client.keys('cinbrainlinks:email_sent:*')
+            stats['queue_size'] = self.redis_client.llen('savlink:email_queue')
+            stats['fallback_queue_size'] = self.redis_client.llen('savlink:email_fallback_queue')
+            keys = self.redis_client.keys('savlink:email_sent:*')
             stats['sent_count_24h'] = len(keys)
-            
             return stats
-            
         except Exception as e:
-            logger.error(f"Error getting queue stats: {e}")
             stats['error'] = str(e)
             return stats
 
 
-# Singleton accessor
 _email_service_instance = None
 
 
 def get_email_service() -> BrevoEmailService:
-    """Get or create email service singleton instance."""
     global _email_service_instance
     if _email_service_instance is None:
         _email_service_instance = BrevoEmailService()
     return _email_service_instance
 
 
-# Convenience class for backwards compatibility
 class EmailService:
-    """Wrapper class for backwards compatibility."""
-    
     def __new__(cls):
         return get_email_service()
