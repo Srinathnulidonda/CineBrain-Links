@@ -1,99 +1,74 @@
-import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from 'react-router-dom';
-import { AuthProvider } from './auth/AuthContext';
-import ProtectedRoute from './auth/ProtectedRoute';
-import Navbar from './components/Navbar';
-import Footer from './components/Footer';
+// frontend/src/App.jsx
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
 
-// Pages
-import Home from './pages/Home';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import ForgotPassword from './pages/ForgotPassword';
-import ResetPassword from './pages/ResetPassword';
-import Dashboard from './pages/Dashboard';
-import CreateLink from './pages/CreateLink';
-import NotFound from './pages/NotFound';
-import RedirectHandler from './pages/RedirectHandler';
+// Eager load the home page for best initial performance
+import Home from './pages/public/Home';
 
-// App routes
-const APP_ROUTES = [
-  'login',
-  'register',
-  'dashboard',
-  'create',
-  'forgot-password',
-  'reset-password',
-  '404',
-  'favicon.ico',
-  'robots.txt',
-  'sitemap.xml'
-];
+// Lazy load other pages
+const Login = lazy(() => import('./pages/auth/Login'));
+const Register = lazy(() => import('./pages/auth/Register'));
+const Dashboard = lazy(() => import('./pages/dashboard/Dashboard'));
+const NotFound = lazy(() => import('./pages/public/NotFound'));
 
-// Smart redirect component
-const SmartRedirect = () => {
-  const { slug } = useParams();
-
-  // Check if it's an app route or static file
-  if (!slug || APP_ROUTES.includes(slug.toLowerCase())) {
-    return <Navigate to="/404" replace />;
-  }
-
-  // Check if slug starts with common static paths
-  if (slug.startsWith('_next') || slug.startsWith('static') || slug.startsWith('assets')) {
-    return <Navigate to="/404" replace />;
-  }
-
-  return <RedirectHandler />;
-};
-
-function App() {
+// Loading fallback component
+function PageLoader() {
   return (
-    <Router>
-      <AuthProvider>
-        <div className="flex flex-col min-h-screen">
-          <Navbar />
-          <main className="flex-grow">
-            <Routes>
-              {/* Public Routes */}
-              <Route path="/" element={<Home />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/register" element={<Register />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
-
-              {/* Protected Routes */}
-              <Route
-                path="/dashboard"
-                element={
-                  <ProtectedRoute>
-                    <Dashboard />
-                  </ProtectedRoute>
-                }
+    <div className="flex min-h-screen items-center justify-center bg-white">
+      <div className="flex flex-col items-center gap-4">
+        <div className="relative h-10 w-10">
+          <div className="absolute inset-0 animate-ping rounded-full bg-savlink-primary/20" />
+          <div className="relative flex h-10 w-10 items-center justify-center rounded-full bg-savlink-primary">
+            <svg
+              className="h-5 w-5 animate-pulse text-white"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"
               />
-              <Route
-                path="/create"
-                element={
-                  <ProtectedRoute>
-                    <CreateLink />
-                  </ProtectedRoute>
-                }
-              />
-
-              {/* 404 Page */}
-              <Route path="/404" element={<NotFound />} />
-
-              {/* Short Link Redirect Handler - Must be LAST before catch-all */}
-              <Route path="/:slug" element={<SmartRedirect />} />
-
-              {/* Fallback to 404 */}
-              <Route path="*" element={<Navigate to="/404" replace />} />
-            </Routes>
-          </main>
-          <Footer />
+            </svg>
+          </div>
         </div>
-      </AuthProvider>
-    </Router>
+        <p className="text-sm font-medium text-gray-500">Loading...</p>
+      </div>
+    </div>
   );
 }
 
-export default App;
+// Scroll to top on route change
+function ScrollToTop() {
+  return null;
+}
+
+export default function App() {
+  return (
+    <>
+      <ScrollToTop />
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/" element={<Home />} />
+
+          {/* Auth Routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+
+          {/* Dashboard Routes (Protected) */}
+          <Route path="/dashboard/*" element={<Dashboard />} />
+
+          {/* Redirects */}
+          <Route path="/signin" element={<Navigate to="/login" replace />} />
+          <Route path="/signup" element={<Navigate to="/register" replace />} />
+
+          {/* 404 */}
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </Suspense>
+    </>
+  );
+}
