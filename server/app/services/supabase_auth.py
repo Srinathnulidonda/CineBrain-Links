@@ -30,7 +30,8 @@ class SupabaseAuthService:
     @classmethod
     def get_supabase_url(cls) -> str:
         """Get Supabase project URL"""
-        return current_app.config.get("SUPABASE_URL", "")
+        url = current_app.config.get("SUPABASE_URL", "")
+        return url.strip() if url else ""
 
     @classmethod
     def get_supabase_project_id(cls) -> str:
@@ -49,22 +50,42 @@ class SupabaseAuthService:
     @classmethod
     def get_supabase_anon_key(cls) -> str:
         """Get Supabase anonymous key"""
-        return current_app.config.get("SUPABASE_ANON_KEY", "")
+        key = current_app.config.get("SUPABASE_ANON_KEY", "")
+        return key.strip() if key else ""
 
     @classmethod
     def get_supabase_service_key(cls) -> str:
         """Get Supabase service key (for admin operations)"""
-        return current_app.config.get("SUPABASE_SERVICE_KEY", "")
+        key = current_app.config.get("SUPABASE_SERVICE_KEY", "")
+        return key.strip() if key else ""
 
     @classmethod
     def register_user(cls, email: str, password: str, name: Optional[str] = None) -> Tuple[Optional[Dict], Optional[str]]:
         """Register a new user with Supabase"""
         try:
+            # Add debug logging
+            logger.info(f"Attempting registration for email: {email if email else 'None'}")
+            
+            # Validate inputs
+            if not email:
+                logger.error("Registration attempted with no email")
+                return None, "Email is required"
+            
+            if not password:
+                logger.error("Registration attempted with no password")
+                return None, "Password is required"
+            
+            # Clean email
+            email = str(email).strip().lower()
+                
             supabase_url = cls.get_supabase_url()
             anon_key = cls.get_supabase_anon_key()
             
+            logger.info(f"Supabase URL configured: {bool(supabase_url)}")
+            logger.info(f"Supabase Anon Key configured: {bool(anon_key)}")
+            
             if not supabase_url or not anon_key:
-                logger.error("Supabase configuration missing")
+                logger.error(f"Supabase configuration missing - URL: {supabase_url[:30] if supabase_url else 'None'}, Key: {'Present' if anon_key else 'None'}")
                 return None, "Authentication service not configured"
             
             # Prepare user metadata
@@ -72,6 +93,9 @@ class SupabaseAuthService:
             if name:
                 user_metadata["full_name"] = name
                 user_metadata["name"] = name
+            
+            # Log the request being made
+            logger.info(f"Making registration request to Supabase for email: {email}")
             
             # Call Supabase signup endpoint
             response = requests.post(
@@ -88,28 +112,52 @@ class SupabaseAuthService:
                 timeout=10
             )
             
+            logger.info(f"Supabase response status: {response.status_code}")
+            
             if response.status_code == 200:
                 data = response.json()
                 
                 # Extract user info
                 user_data = data.get("user", {})
                 
-                # Create user in our database
-                user = User(
-                    id=user_data.get("id"),
-                    email=user_data.get("email"),
-                    name=name or email.split("@")[0].replace(".", " ").title(),
-                    auth_provider="email"
-                )
+                # Make sure we have required user data
+                user_id = user_data.get("id")
+                user_email = user_data.get("email") or email
                 
-                db.session.add(user)
-                db.session.commit()
+                if not user_id:
+                    logger.error(f"Invalid user data from Supabase: ID={user_id}, Email={user_email}")
+                    return None, "Invalid response from authentication service"
+                
+                logger.info(f"Creating user in database: ID={user_id}, Email={user_email}")
+                
+                # Create user in our database
+                try:
+                    user = User(
+                        id=user_id,
+                        email=user_email,
+                        name=name or email.split("@")[0].replace(".", " ").title(),
+                        auth_provider="email"
+                    )
+                    
+                    db.session.add(user)
+                    db.session.commit()
+                    
+                    logger.info(f"User created successfully in database")
+                except Exception as db_error:
+                    logger.error(f"Database error creating user: {db_error}")
+                    db.session.rollback()
+                    # Don't fail the registration if DB insert fails - user is created in Supabase
+                    user = {
+                        "id": user_id,
+                        "email": user_email,
+                        "name": name or email.split("@")[0].replace(".", " ").title()
+                    }
                 
                 # Send welcome email
                 try:
                     from app.services.email_service import get_email_service
                     email_service = get_email_service()
-                    email_service.send_welcome_email(email, user_name=user.name)
+                    email_service.send_welcome_email(user_email, user_name=name)
                 except Exception as e:
                     logger.warning(f"Welcome email failed: {e}")
                 
@@ -117,18 +165,21 @@ class SupabaseAuthService:
                 return {
                     "access_token": data.get("access_token"),
                     "refresh_token": data.get("refresh_token"),
-                    "user": user.to_dict()
+                    "user": user.to_dict() if hasattr(user, 'to_dict') else user
                 }, None
                 
             elif response.status_code == 400:
                 error_data = response.json()
-                error_msg = error_data.get("msg") or error_data.get("message") or "Registration failed"
+                logger.error(f"Supabase registration error: {error_data}")
+                error_msg = error_data.get("msg") or error_data.get("message") or error_data.get("error_description") or "Registration failed"
                 
                 # Check for common errors
-                if "already registered" in error_msg.lower():
+                if "already registered" in str(error_msg).lower() or "already exists" in str(error_msg).lower():
                     return None, "This email is already registered"
-                elif "password" in error_msg.lower():
+                elif "password" in str(error_msg).lower():
                     return None, "Password must be at least 8 characters"
+                elif "email" in str(error_msg).lower() and "valid" in str(error_msg).lower():
+                    return None, "Please provide a valid email address"
                 else:
                     return None, error_msg
             else:
@@ -139,19 +190,29 @@ class SupabaseAuthService:
             logger.error(f"Network error during registration: {e}")
             return None, "Network error. Please try again."
         except Exception as e:
-            logger.error(f"Registration error: {e}")
+            logger.error(f"Registration error: {str(e)}", exc_info=True)
             db.session.rollback()
-            return None, "Registration failed. Please try again."
+            return None, f"Registration failed: {str(e)}"
 
     @classmethod
     def login_user(cls, email: str, password: str) -> Tuple[Optional[Dict], Optional[str]]:
         """Login user with Supabase"""
         try:
+            # Validate and clean inputs
+            if not email:
+                return None, "Email is required"
+            if not password:
+                return None, "Password is required"
+            
+            email = str(email).strip().lower()
+            
             supabase_url = cls.get_supabase_url()
             anon_key = cls.get_supabase_anon_key()
             
+            logger.info(f"Login attempt for email: {email}")
+            
             if not supabase_url or not anon_key:
-                logger.error("Supabase configuration missing")
+                logger.error("Supabase configuration missing for login")
                 return None, "Authentication service not configured"
             
             # Call Supabase signin endpoint
@@ -171,18 +232,28 @@ class SupabaseAuthService:
                 timeout=10
             )
             
+            logger.info(f"Supabase login response status: {response.status_code}")
+            
             if response.status_code == 200:
                 data = response.json()
                 
                 # Get or create user in our database
                 user_data = data.get("user", {})
-                user = User.query.get(user_data.get("id"))
+                user_id = user_data.get("id")
+                user_email = user_data.get("email") or email
+                
+                if not user_id:
+                    logger.error("No user ID in Supabase response")
+                    return None, "Invalid authentication response"
+                
+                user = User.query.get(user_id)
                 
                 if not user:
                     # Create user if doesn't exist
+                    logger.info(f"Creating user on first login: {user_id}")
                     user = User(
-                        id=user_data.get("id"),
-                        email=user_data.get("email"),
+                        id=user_id,
+                        email=user_email,
                         name=user_data.get("user_metadata", {}).get("full_name") or email.split("@")[0].replace(".", " ").title(),
                         auth_provider="email"
                     )
@@ -200,23 +271,24 @@ class SupabaseAuthService:
                 
             elif response.status_code == 400:
                 error_data = response.json()
-                error_msg = error_data.get("error_description") or error_data.get("message") or "Login failed"
+                error_msg = error_data.get("error_description") or error_data.get("message") or error_data.get("msg") or "Login failed"
+                logger.warning(f"Login failed: {error_msg}")
                 
-                if "Invalid login credentials" in error_msg:
+                if "Invalid login credentials" in error_msg or "invalid" in str(error_msg).lower():
                     return None, "Invalid email or password"
                 elif "Email not confirmed" in error_msg:
                     return None, "Please verify your email before logging in"
                 else:
                     return None, error_msg
             else:
-                logger.error(f"Supabase login failed: {response.status_code}")
+                logger.error(f"Supabase login failed: {response.status_code} - {response.text}")
                 return None, "Login failed. Please try again."
                 
         except requests.exceptions.RequestException as e:
             logger.error(f"Network error during login: {e}")
             return None, "Network error. Please try again."
         except Exception as e:
-            logger.error(f"Login error: {e}")
+            logger.error(f"Login error: {str(e)}", exc_info=True)
             db.session.rollback()
             return None, "Login failed. Please try again."
 
@@ -224,12 +296,17 @@ class SupabaseAuthService:
     def request_password_reset(cls, email: str) -> Tuple[bool, Optional[str]]:
         """Request password reset email from Supabase"""
         try:
+            if not email:
+                return False, "Email is required"
+            
+            email = str(email).strip().lower()
+            
             supabase_url = cls.get_supabase_url()
             anon_key = cls.get_supabase_anon_key()
             frontend_url = current_app.config.get("FRONTEND_URL", "http://localhost:3000")
             
             if not supabase_url or not anon_key:
-                logger.error("Supabase configuration missing")
+                logger.error("Supabase configuration missing for password reset")
                 return False, "Authentication service not configured"
             
             # Call Supabase recovery endpoint
@@ -265,7 +342,7 @@ class SupabaseAuthService:
             anon_key = cls.get_supabase_anon_key()
             
             if not supabase_url or not anon_key:
-                logger.error("Supabase configuration missing")
+                logger.error("Supabase configuration missing for password reset")
                 return False, "Authentication service not configured"
             
             # Call Supabase update user endpoint with recovery token
@@ -534,38 +611,41 @@ class SupabaseAuthService:
     @classmethod
     def get_or_create_user(cls, token_payload: Dict) -> Tuple[Optional[User], Optional[str]]:
         """Get existing user or create new one from token payload"""
-        user_id = token_payload.get("sub")
-        if not user_id:
-            return None, "Invalid token: missing user ID"
-        
-        email = token_payload.get("email")
-        if not email:
-            return None, "Invalid token: missing email"
-        
-        # Extract user metadata
-        user_metadata = token_payload.get("user_metadata", {})
-        app_metadata = token_payload.get("app_metadata", {})
-        
-        # Determine auth provider
-        auth_provider = "email"
-        if app_metadata.get("provider") == "google":
-            auth_provider = "google"
-        elif user_metadata.get("iss") and "google" in user_metadata.get("iss"):
-            auth_provider = "google"
-        
-        # Extract profile info
-        name = (
-            user_metadata.get("full_name") or 
-            user_metadata.get("name") or 
-            email.split("@")[0].replace(".", " ").title()
-        )
-        
-        avatar_url = (
-            user_metadata.get("avatar_url") or 
-            user_metadata.get("picture")
-        )
-        
         try:
+            user_id = token_payload.get("sub")
+            if not user_id:
+                return None, "Invalid token: missing user ID"
+            
+            email = token_payload.get("email")
+            if not email:
+                return None, "Invalid token: missing email"
+            
+            # Clean email
+            email = str(email).lower().strip()
+            
+            # Extract user metadata
+            user_metadata = token_payload.get("user_metadata", {})
+            app_metadata = token_payload.get("app_metadata", {})
+            
+            # Determine auth provider
+            auth_provider = "email"
+            if app_metadata.get("provider") == "google":
+                auth_provider = "google"
+            elif user_metadata.get("iss") and "google" in str(user_metadata.get("iss")):
+                auth_provider = "google"
+            
+            # Extract profile info
+            name = (
+                user_metadata.get("full_name") or 
+                user_metadata.get("name") or 
+                email.split("@")[0].replace(".", " ").title()
+            )
+            
+            avatar_url = (
+                user_metadata.get("avatar_url") or 
+                user_metadata.get("picture")
+            )
+            
             # Check if user exists
             user = User.query.get(user_id)
             
@@ -614,5 +694,5 @@ class SupabaseAuthService:
             
         except Exception as e:
             db.session.rollback()
-            logger.error(f"User provisioning failed: {e}")
+            logger.error(f"User provisioning failed: {e}", exc_info=True)
             return None, "Failed to provision user"

@@ -38,23 +38,37 @@ class User(db.Model):
 
     def __init__(self, id: str, email: str, name: str = None, avatar_url: str = None, auth_provider: str = "email"):
         self.id = id  # Use Supabase UUID directly
-        self.email = email.lower().strip()
+        # Safely handle email - ensure it's not None before calling lower/strip
+        if email:
+            self.email = str(email).lower().strip()
+        else:
+            raise ValueError("Email is required")
         self.name = name
         self.avatar_url = avatar_url
-        self.auth_provider = auth_provider
+        self.auth_provider = auth_provider or "email"
 
     def to_dict(self) -> dict:
+        try:
+            links_count = self.links.filter_by(is_deleted=False).count() if hasattr(self, 'links') else 0
+        except:
+            links_count = 0
+        
+        try:
+            folders_count = self.folders.count() if hasattr(self, 'folders') else 0
+        except:
+            folders_count = 0
+            
         return {
             "id": self.id,
             "email": self.email,
             "name": self.name,
             "avatar_url": self.avatar_url,
             "auth_provider": self.auth_provider,
-            "created_at": self.created_at.isoformat(),
+            "created_at": self.created_at.isoformat() if self.created_at else None,
             "is_active": self.is_active,
             "email_verified": self.email_verified,
-            "links_count": self.links.filter_by(is_deleted=False).count(),
-            "folders_count": self.folders.count(),
+            "links_count": links_count,
+            "folders_count": folders_count,
             "preferences": {
                 "default_click_tracking": self.default_click_tracking,
                 "default_privacy_level": self.default_privacy_level,
