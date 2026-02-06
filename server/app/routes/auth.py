@@ -1,492 +1,658 @@
 # server/app/routes/auth.py
 
+import logging
+from datetime import datetime, timedelta
+from typing import Optional
+
 from flask import Blueprint, request, g, current_app
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
+from app.extensions import db, limiter
+from app.models.user import User
+from app.models.activity_log import ActivityLog, ActivityType
+from app.services.supabase_auth import SupabaseAuthService
+from app.services.email_service import get_email_service
+from app.services.redis_service import RedisService
+from app.services.activity_service import ActivityService
+from app.utils.validators import InputValidator
 from app.utils.auth import require_auth
+from app.utils.helpers import mask_email, hash_string
+
+logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint("auth", __name__)
 
 
-@auth_bp.route("/verify", methods=["POST"])
-def verify_token():
-    """Verify Firebase token and return user info"""
-    from app.services.firebase_auth import FirebaseAuthService
-    
-    data = request.get_json()
-    id_token = data.get("idToken")
-    
-    if not id_token:
-        return current_app.api_response.error(
-            "ID token is required",
-            400,
-            "MISSING_ID_TOKEN"
-        )
-    
-    # Verify Firebase token
-    claims = FirebaseAuthService.verify_token(id_token)
-    if not claims:
-        return current_app.api_response.error(
-            "Invalid or expired token",
-            401,
-            "INVALID_TOKEN"
-        )
-    
-    # Get or create user
-    user, error = FirebaseAuthService.get_or_create_user(claims)
-    if not user:
-        return current_app.api_response.error(
-            error or "Authentication failed",
-            500,
-            "AUTH_ERROR"
-        )
-    
-    return current_app.api_response.success({
-        "user": user.to_dict()
-    })
-
-
-@auth_bp.route("/me", methods=["GET"])
-@require_auth
-def get_current_user():
-    """Get current user profile"""
-    return current_app.api_response.success({
-        "user": g.current_user.to_dict()
-    })
-
-
-@auth_bp.route("/me", methods=["PUT"])
-@require_auth
-def update_profile():
-    """Update user profile"""
-    from app.extensions import db
-    
-    data = request.get_json()
-    user = g.current_user
-    
-    # Update allowed fields
-    if "name" in data:
-        user.name = data["name"].strip() if data["name"] else None
-    
-    if "default_click_tracking" in data:
-        user.default_click_tracking = bool(data["default_click_tracking"])
-    
-    if "default_privacy_level" in data:
-        if data["default_privacy_level"] in ["private", "unlisted", "public"]:
-            user.default_privacy_level = data["default_privacy_level"]
-    
-    if "data_retention_days" in data:
-        days = data["data_retention_days"]
-        if days is None or (isinstance(days, int) and 1 <= days <= 365):
-            user.data_retention_days = days
-    
+@auth_bp.route("/register", methods=["POST"])
+@limiter.limit("5 per hour")
+def register():
+    """Register a new user with email and password"""
     try:
-        db.session.commit()
-        return current_app.api_response.success({
-            "user": user.to_dict(),
-            "message": "Profile updated successfully"
-        })
-    except Exception as e:
-        db.session.rollback()
-        current_app.logger.error(f"Profile update failed: {e}")
-        return current_app.api_response.error(
-            "Failed to update profile",
-            500,
-            "UPDATE_FAILED"
-        )
-
-
-@auth_bp.route("/password-reset/request", methods=["POST"])
-def request_password_reset():
-    """Request password reset for Firebase users"""
-    from app.extensions import db
-    from app.models.user import User
-    from app.services.email_service import get_email_service
-    from app.utils.validators import InputValidator
-    import secrets
-    import hashlib
-    from datetime import datetime, timedelta
-    
-    data = request.get_json()
-    email = data.get("email")
-    
-    if not email:
-        return current_app.api_response.error(
-            "Email is required",
-            400,
-            "MISSING_EMAIL"
-        )
-    
-    # Validate email
-    is_valid, normalized_email, error = InputValidator.validate_email(email)
-    if not is_valid:
-        return current_app.api_response.error(
-            error,
-            400,
-            "INVALID_EMAIL"
-        )
-    
-    # Check if user exists
-    user = User.query.filter_by(email=normalized_email).first()
-    if not user:
-        # Always return success for security (don't reveal if email exists)
-        return current_app.api_response.success({
-            "message": "If an account with that email exists, a password reset link has been sent."
-        })
-    
-    try:
-        # Generate reset token
-        reset_token = secrets.token_urlsafe(32)
-        token_hash = hashlib.sha256(reset_token.encode()).hexdigest()
+        data = request.get_json()
         
-        # Store reset token in Redis with expiration
-        from app.services.redis_service import RedisService
-        redis_service = RedisService()
-        reset_key = f"password_reset:{token_hash}"
-        reset_data = {
-            "user_id": user.id,
-            "email": user.email,
-            "created_at": datetime.utcnow().isoformat()
-        }
+        # Validate input
+        email = data.get("email", "").strip().lower()
+        password = data.get("password", "")
+        name = data.get("name", "").strip()
         
-        # Token expires in 1 hour
-        redis_service.client.setex(reset_key, 3600, str(reset_data))
+        # Validate email
+        is_valid, clean_email, error = InputValidator.validate_email(email)
+        if not is_valid:
+            return current_app.api_response.error(error, 400)
         
-        # Send reset email
-        email_service = get_email_service()
-        request_info = {
-            "ip": request.remote_addr,
-            "device": request.headers.get("User-Agent", "Unknown")
-        }
+        # Validate password
+        is_valid, error = InputValidator.validate_password(password)
+        if not is_valid:
+            return current_app.api_response.error(error, 400)
         
-        email_service.send_password_reset_email(
-            to_email=user.email,
-            reset_token=reset_token,
-            user_name=user.name,
-            request_info=request_info
-        )
-        
-        # Log activity
-        from app.services.activity_service import ActivityService
-        from app.models.activity_log import ActivityType
-        ActivityService.log_activity(
-            user_id=user.id,
-            activity_type=ActivityType.PASSWORD_RESET_REQUESTED,
-            resource_type="user",
-            resource_id=user.id,
-            extra_data={"email": user.email},
-            ip_address=request.remote_addr,
-            user_agent=request.headers.get("User-Agent")
-        )
-        
-        return current_app.api_response.success({
-            "message": "If an account with that email exists, a password reset link has been sent."
-        })
-        
-    except Exception as e:
-        current_app.logger.error(f"Password reset request failed: {e}")
-        return current_app.api_response.error(
-            "Failed to process password reset request",
-            500,
-            "RESET_REQUEST_FAILED"
-        )
-
-
-@auth_bp.route("/password-reset/verify", methods=["POST"])
-def verify_reset_token():
-    """Verify password reset token"""
-    from app.services.redis_service import RedisService
-    import hashlib
-    import ast
-    
-    data = request.get_json()
-    token = data.get("token")
-    
-    if not token:
-        return current_app.api_response.error(
-            "Reset token is required",
-            400,
-            "MISSING_TOKEN"
-        )
-    
-    try:
-        # Hash token to match stored version
-        token_hash = hashlib.sha256(token.encode()).hexdigest()
-        
-        # Check if token exists in Redis
-        redis_service = RedisService()
-        reset_key = f"password_reset:{token_hash}"
-        reset_data_str = redis_service.client.get(reset_key)
-        
-        if not reset_data_str:
+        # Check if user already exists in our database
+        existing_user = User.query.filter_by(email=clean_email).first()
+        if existing_user:
             return current_app.api_response.error(
-                "Invalid or expired reset token",
-                400,
-                "INVALID_TOKEN"
+                "An account with this email already exists", 
+                409
             )
         
-        # Parse reset data
-        reset_data = ast.literal_eval(reset_data_str)
-        
-        return current_app.api_response.success({
-            "message": "Reset token is valid",
-            "email": reset_data.get("email")
-        })
-        
-    except Exception as e:
-        current_app.logger.error(f"Token verification failed: {e}")
-        return current_app.api_response.error(
-            "Invalid reset token",
-            400,
-            "INVALID_TOKEN"
+        # Register with Supabase
+        result, error = SupabaseAuthService.register_user(
+            email=clean_email,
+            password=password,
+            name=name
         )
-
-
-@auth_bp.route("/password-reset/confirm", methods=["POST"])
-def confirm_password_reset():
-    """Reset password using Firebase Admin SDK"""
-    from app.services.redis_service import RedisService
-    from app.services.firebase_auth import FirebaseAuthService
-    from firebase_admin import auth
-    import hashlib
-    import ast
-    
-    data = request.get_json()
-    token = data.get("token")
-    new_password = data.get("password")
-    
-    if not token or not new_password:
-        return current_app.api_response.error(
-            "Reset token and new password are required",
-            400,
-            "MISSING_FIELDS"
-        )
-    
-    # Validate password
-    from app.utils.validators import InputValidator
-    is_valid, error = InputValidator.validate_password(new_password)
-    if not is_valid:
-        return current_app.api_response.error(
-            error,
-            400,
-            "INVALID_PASSWORD"
-        )
-    
-    try:
-        # Verify token
-        token_hash = hashlib.sha256(token.encode()).hexdigest()
-        redis_service = RedisService()
-        reset_key = f"password_reset:{token_hash}"
-        reset_data_str = redis_service.client.get(reset_key)
         
-        if not reset_data_str:
-            return current_app.api_response.error(
-                "Invalid or expired reset token",
-                400,
-                "INVALID_TOKEN"
-            )
+        if error:
+            return current_app.api_response.error(error, 400)
         
-        reset_data = ast.literal_eval(reset_data_str)
-        user_email = reset_data.get("email")
-        
-        # Initialize Firebase Admin if needed
-        FirebaseAuthService.initialize()
-        
-        # Get Firebase user by email
-        firebase_user = auth.get_user_by_email(user_email)
-        
-        # Update password in Firebase
-        auth.update_user(firebase_user.uid, password=new_password)
-        
-        # Delete used token
-        redis_service.client.delete(reset_key)
-        
-        # Log activity
-        from app.models.user import User
-        user = User.query.filter_by(email=user_email).first()
-        if user:
-            from app.services.activity_service import ActivityService
-            from app.models.activity_log import ActivityType
+        # Log registration activity
+        try:
             ActivityService.log_activity(
-                user_id=user.id,
-                activity_type=ActivityType.PASSWORD_RESET_COMPLETED,
+                user_id=result["user"]["id"],
+                activity_type=ActivityType.USER_REGISTERED,
                 resource_type="user",
-                resource_id=user.id,
-                extra_data={"email": user_email},
+                resource_id=result["user"]["id"],
+                extra_data={"email": mask_email(clean_email)},
                 ip_address=request.remote_addr,
-                user_agent=request.headers.get("User-Agent")
+                user_agent=request.headers.get('User-Agent')
             )
+        except Exception as e:
+            logger.warning(f"Activity logging failed: {e}")
         
-        return current_app.api_response.success({
-            "message": "Password has been reset successfully"
-        })
+        return current_app.api_response.success(
+            {
+                "access_token": result["access_token"],
+                "refresh_token": result["refresh_token"],
+                "user": result["user"]
+            },
+            "Registration successful! Please check your email to verify your account.",
+            201
+        )
         
     except Exception as e:
-        current_app.logger.error(f"Password reset failed: {e}")
+        logger.error(f"Registration error: {e}")
         return current_app.api_response.error(
-            "Failed to reset password",
-            500,
-            "RESET_FAILED"
+            "Registration failed. Please try again.",
+            500
+        )
+
+
+@auth_bp.route("/login", methods=["POST"])
+@limiter.limit("10 per hour")
+def login():
+    """Login with email and password"""
+    try:
+        data = request.get_json()
+        
+        # Validate input
+        email = data.get("email", "").strip().lower()
+        password = data.get("password", "")
+        
+        if not email or not password:
+            return current_app.api_response.error(
+                "Email and password are required",
+                400
+            )
+        
+        # Validate email format
+        is_valid, clean_email, error = InputValidator.validate_email(email)
+        if not is_valid:
+            return current_app.api_response.error(error, 400)
+        
+        # Attempt login with Supabase
+        result, error = SupabaseAuthService.login_user(
+            email=clean_email,
+            password=password
+        )
+        
+        if error:
+            # Log failed attempt
+            logger.warning(f"Failed login attempt for {mask_email(clean_email)}")
+            
+            # Track failed login attempts in Redis
+            try:
+                redis = RedisService()
+                identifier = f"login_attempts:{hash_string(clean_email, 'md5')}"
+                allowed, remaining = redis.rate_limit_check(identifier, 5, 3600)
+                
+                if not allowed:
+                    return current_app.api_response.error(
+                        "Too many failed login attempts. Please try again later.",
+                        429
+                    )
+            except Exception:
+                pass
+            
+            return current_app.api_response.error(error, 401)
+        
+        # Log successful login
+        logger.info(f"User logged in: {result['user']['id']}")
+        
+        # Log activity
+        try:
+            ActivityService.log_activity(
+                user_id=result["user"]["id"],
+                activity_type=ActivityType.USER_LOGIN,
+                resource_type="user",
+                resource_id=result["user"]["id"],
+                ip_address=request.remote_addr,
+                user_agent=request.headers.get('User-Agent')
+            )
+        except Exception:
+            pass
+        
+        return current_app.api_response.success(
+            {
+                "access_token": result["access_token"],
+                "refresh_token": result["refresh_token"],
+                "user": result["user"]
+            },
+            "Login successful"
+        )
+        
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        return current_app.api_response.error(
+            "Login failed. Please try again.",
+            500
+        )
+
+
+@auth_bp.route("/forgot-password", methods=["POST"])
+@limiter.limit("3 per hour")
+def forgot_password():
+    """Request password reset email"""
+    try:
+        data = request.get_json()
+        email = data.get("email", "").strip().lower()
+        
+        # Validate email
+        is_valid, clean_email, error = InputValidator.validate_email(email)
+        if not is_valid:
+            return current_app.api_response.error(error, 400)
+        
+        # Check if user exists
+        user = User.query.filter_by(email=clean_email).first()
+        
+        if user:
+            # Request password reset from Supabase
+            success, error = SupabaseAuthService.request_password_reset(clean_email)
+            
+            # Log activity
+            try:
+                ActivityService.log_activity(
+                    user_id=user.id,
+                    activity_type=ActivityType.PASSWORD_RESET_REQUESTED,
+                    resource_type="user",
+                    resource_id=user.id,
+                    extra_data={"email": mask_email(clean_email)},
+                    ip_address=request.remote_addr,
+                    user_agent=request.headers.get('User-Agent')
+                )
+            except Exception:
+                pass
+            
+            logger.info(f"Password reset requested for {mask_email(clean_email)}")
+        
+        # Always return success to prevent email enumeration
+        return current_app.api_response.success(
+            None,
+            "If an account exists with this email, you will receive password reset instructions."
+        )
+        
+    except Exception as e:
+        logger.error(f"Forgot password error: {e}")
+        return current_app.api_response.error(
+            "Failed to process request. Please try again.",
+            500
+        )
+
+
+@auth_bp.route("/reset-password", methods=["POST"])
+@limiter.limit("5 per hour")
+def reset_password():
+    """Reset password with token"""
+    try:
+        data = request.get_json()
+        token = data.get("token", "").strip()
+        new_password = data.get("password", "")
+        
+        if not token:
+            return current_app.api_response.error(
+                "Reset token is required",
+                400
+            )
+        
+        # Validate new password
+        is_valid, error = InputValidator.validate_password(new_password)
+        if not is_valid:
+            return current_app.api_response.error(error, 400)
+        
+        # Reset password with Supabase
+        success, error = SupabaseAuthService.reset_password_with_token(
+            token=token,
+            new_password=new_password
+        )
+        
+        if not success:
+            return current_app.api_response.error(
+                error or "Failed to reset password",
+                400
+            )
+        
+        # Log activity (we don't know the user from token, so skip for now)
+        logger.info("Password reset successful")
+        
+        return current_app.api_response.success(
+            None,
+            "Password has been reset successfully. You can now login with your new password."
+        )
+        
+    except Exception as e:
+        logger.error(f"Reset password error: {e}")
+        return current_app.api_response.error(
+            "Failed to reset password. Please try again.",
+            500
+        )
+
+
+@auth_bp.route("/refresh", methods=["POST"])
+def refresh_token():
+    """Refresh access token"""
+    try:
+        data = request.get_json()
+        refresh_token = data.get("refresh_token", "").strip()
+        
+        if not refresh_token:
+            return current_app.api_response.error(
+                "Refresh token is required",
+                400
+            )
+        
+        # Refresh token with Supabase
+        result, error = SupabaseAuthService.refresh_token(refresh_token)
+        
+        if error:
+            return current_app.api_response.error(error, 401)
+        
+        return current_app.api_response.success(
+            {
+                "access_token": result["access_token"],
+                "refresh_token": result["refresh_token"]
+            },
+            "Token refreshed successfully"
+        )
+        
+    except Exception as e:
+        logger.error(f"Token refresh error: {e}")
+        return current_app.api_response.error(
+            "Failed to refresh token",
+            500
         )
 
 
 @auth_bp.route("/logout", methods=["POST"])
 @require_auth
 def logout():
-    """Logout endpoint (client should delete Firebase token)"""
-    # Log activity
+    """Logout current user"""
     try:
-        from app.services.activity_service import ActivityService
-        from app.models.activity_log import ActivityType
-        ActivityService.log_activity(
-            user_id=g.current_user.id,
-            activity_type=ActivityType.USER_LOGOUT,
-            resource_type="user",
-            resource_id=g.current_user.id,
-            extra_data={"email": g.current_user.email},
-            ip_address=request.remote_addr,
-            user_agent=request.headers.get("User-Agent")
-        )
-    except Exception as e:
-        current_app.logger.warning(f"Failed to log logout activity: {e}")
-    
-    return current_app.api_response.success({
-        "message": "Logged out successfully"
-    })
-
-
-@auth_bp.route("/delete-account", methods=["POST"])
-@require_auth
-def delete_account():
-    """Delete user account - requires Firebase token verification"""
-    from app.extensions import db
-    from app.services.activity_service import ActivityService
-    from app.models.activity_log import ActivityType
-    from app.services.firebase_auth import FirebaseAuthService
-    from firebase_admin import auth
-    
-    user = g.current_user
-    user_id = user.id
-    email = user.email
-    firebase_uid = user.firebase_uid
-    
-    try:
-        # Log account deletion before deleting
-        ActivityService.log_activity(
-            user_id=user_id,
-            activity_type=ActivityType.ACCOUNT_DELETED,
-            resource_type="user",
-            resource_id=user_id,
-            extra_data={"email": email},
-            ip_address=request.remote_addr,
-            user_agent=request.headers.get("User-Agent")
-        )
+        # Get token from header
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+        else:
+            token = None
         
-        # Delete from Firebase (optional - user can also delete from Firebase console)
-        if firebase_uid:
+        if token:
+            # Logout from Supabase
+            SupabaseAuthService.logout_user(token)
+            
+            # Add token to blacklist if using Redis
             try:
-                FirebaseAuthService.initialize()
-                auth.delete_user(firebase_uid)
+                redis_service = RedisService()
+                # Extract token ID if present
+                import jwt as pyjwt
+                try:
+                    unverified_payload = pyjwt.decode(token, options={"verify_signature": False})
+                    jti = unverified_payload.get("jti") or token[:50]
+                except:
+                    jti = token[:50]
+                
+                redis_service.blacklist_token(jti, ttl=86400)
             except Exception as e:
-                current_app.logger.warning(f"Failed to delete Firebase user: {e}")
+                logger.warning(f"Token blacklisting failed: {e}")
         
-        # Soft delete or hard delete user (depending on your requirements)
-        user.is_active = False
-        user.email = f"deleted_{user_id}@deleted.local"  # Anonymize
-        user.name = None
-        user.avatar_url = None
+        # Log activity
+        try:
+            ActivityService.log_activity(
+                user_id=g.current_user_id,
+                activity_type=ActivityType.USER_LOGOUT,
+                resource_type="user",
+                resource_id=g.current_user_id,
+                ip_address=request.remote_addr,
+                user_agent=request.headers.get('User-Agent')
+            )
+        except Exception:
+            pass
         
-        # Or hard delete (uncomment if you prefer):
-        # db.session.delete(user)
+        return current_app.api_response.success(
+            None,
+            "Logged out successfully"
+        )
         
+    except Exception as e:
+        logger.error(f"Logout error: {e}")
+        return current_app.api_response.error(
+            "Logout failed",
+            500
+        )
+
+
+@auth_bp.route("/me", methods=["GET"])
+@require_auth
+def get_current_user():
+    """Get current user profile"""
+    try:
+        user = g.current_user
+        
+        # Try to get cached stats first
+        redis = RedisService()
+        stats = redis.get_cached_user_stats(user.id)
+        
+        if not stats:
+            # Calculate stats
+            stats = {
+                "total_links": user.links.filter_by(is_deleted=False).count(),
+                "shortened_links": user.links.filter_by(is_deleted=False, link_type='shortened').count(),
+                "saved_links": user.links.filter_by(is_deleted=False, link_type='saved').count(),
+                "total_clicks": db.session.query(db.func.sum(user.links.c.clicks)).scalar() or 0,
+                "total_folders": user.folders.count(),
+                "total_tags": user.tags.count()
+            }
+            
+            # Cache stats for 5 minutes
+            redis.cache_user_stats(user.id, stats, ttl=300)
+        
+        user_data = user.to_dict()
+        user_data["stats"] = stats
+        
+        return current_app.api_response.success(user_data)
+        
+    except Exception as e:
+        logger.error(f"Get user error: {e}")
+        return current_app.api_response.error(
+            "Failed to get user profile",
+            500
+        )
+
+
+@auth_bp.route("/me", methods=["PATCH"])
+@require_auth
+def update_profile():
+    """Update user profile"""
+    try:
+        user = g.current_user
+        data = request.get_json()
+        
+        updated_fields = []
+        
+        # Update allowed fields
+        if "name" in data:
+            name = data["name"].strip()
+            if len(name) > 100:
+                return current_app.api_response.error(
+                    "Name is too long (max 100 characters)",
+                    400
+                )
+            if len(name) < 1:
+                return current_app.api_response.error(
+                    "Name cannot be empty",
+                    400
+                )
+            user.name = name
+            updated_fields.append("name")
+        
+        if "avatar_url" in data:
+            avatar_url = data["avatar_url"]
+            if avatar_url and len(avatar_url) > 512:
+                return current_app.api_response.error(
+                    "Avatar URL is too long",
+                    400
+                )
+            user.avatar_url = avatar_url
+            updated_fields.append("avatar_url")
+        
+        if "default_click_tracking" in data:
+            user.default_click_tracking = bool(data["default_click_tracking"])
+            updated_fields.append("default_click_tracking")
+        
+        if "default_privacy_level" in data:
+            privacy = data["default_privacy_level"]
+            if privacy not in ["private", "unlisted", "public"]:
+                return current_app.api_response.error(
+                    "Invalid privacy level",
+                    400
+                )
+            user.default_privacy_level = privacy
+            updated_fields.append("default_privacy_level")
+        
+        if "data_retention_days" in data:
+            retention = data["data_retention_days"]
+            if retention is not None:
+                if not isinstance(retention, int) or retention < 0:
+                    return current_app.api_response.error(
+                        "Invalid data retention days",
+                        400
+                    )
+                if retention > 365:
+                    return current_app.api_response.error(
+                        "Data retention cannot exceed 365 days",
+                        400
+                    )
+            user.data_retention_days = retention
+            updated_fields.append("data_retention_days")
+        
+        if not updated_fields:
+            return current_app.api_response.error(
+                "No fields to update",
+                400
+            )
+        
+        user.updated_at = datetime.utcnow()
         db.session.commit()
         
-        # Send account deletion confirmation email
+        # Invalidate user stats cache
         try:
-            from app.services.email_service import get_email_service
-            email_service = get_email_service()
-            email_service.send_account_deletion_email(
-                to_email=email,
-                user_name=user.name or email.split("@")[0]
-            )
-        except Exception as e:
-            current_app.logger.warning(f"Failed to send deletion confirmation email: {e}")
+            redis = RedisService()
+            redis.invalidate_user_stats(user.id)
+        except Exception:
+            pass
         
-        return current_app.api_response.success({
-            "message": "Account deleted successfully"
-        })
+        # Log activity
+        ActivityService.log_activity(
+            user_id=user.id,
+            activity_type=ActivityType.USER_UPDATED,
+            resource_type="user",
+            resource_id=user.id,
+            extra_data={"fields": updated_fields}
+        )
+        
+        return current_app.api_response.success(
+            user.to_dict(),
+            "Profile updated successfully"
+        )
         
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Account deletion failed: {e}")
+        logger.error(f"Update profile error: {e}")
+        return current_app.api_response.error(
+            "Failed to update profile",
+            500
+        )
+
+
+@auth_bp.route("/change-password", methods=["POST"])
+@require_auth
+@limiter.limit("3 per hour")
+def change_password():
+    """Change password for logged-in user"""
+    try:
+        user = g.current_user
+        data = request.get_json()
+        
+        current_password = data.get("current_password", "")
+        new_password = data.get("new_password", "")
+        
+        if not current_password or not new_password:
+            return current_app.api_response.error(
+                "Current and new passwords are required",
+                400
+            )
+        
+        # Validate new password
+        is_valid, error = InputValidator.validate_password(new_password)
+        if not is_valid:
+            return current_app.api_response.error(error, 400)
+        
+        # Verify current password
+        result, error = SupabaseAuthService.login_user(
+            email=user.email,
+            password=current_password
+        )
+        
+        if error:
+            return current_app.api_response.error(
+                "Current password is incorrect",
+                401
+            )
+        
+        # Get current token from header
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+        else:
+            return current_app.api_response.error("Invalid authorization", 401)
+        
+        # Change password
+        success, error = SupabaseAuthService.change_password(
+            token=token,
+            new_password=new_password
+        )
+        
+        if not success:
+            return current_app.api_response.error(
+                error or "Failed to change password",
+                400
+            )
+        
+        # Log activity
+        ActivityService.log_activity(
+            user_id=user.id,
+            activity_type=ActivityType.PASSWORD_CHANGED,
+            resource_type="user",
+            resource_id=user.id,
+            ip_address=request.remote_addr
+        )
+        
+        return current_app.api_response.success(
+            None,
+            "Password changed successfully"
+        )
+        
+    except Exception as e:
+        logger.error(f"Change password error: {e}")
+        return current_app.api_response.error(
+            "Failed to change password",
+            500
+        )
+
+
+@auth_bp.route("/delete-account", methods=["DELETE"])
+@require_auth
+@limiter.limit("1 per hour")
+def delete_account():
+    """Delete user account (requires password confirmation)"""
+    try:
+        user = g.current_user
+        data = request.get_json()
+        
+        password = data.get("password", "")
+        confirmation = data.get("confirmation", "")
+        
+        if not password:
+            return current_app.api_response.error(
+                "Password confirmation is required",
+                400
+            )
+        
+        if confirmation != "DELETE":
+            return current_app.api_response.error(
+                "Please type DELETE to confirm account deletion",
+                400
+            )
+        
+        # Verify password with Supabase
+        result, error = SupabaseAuthService.login_user(
+            email=user.email,
+            password=password
+        )
+        
+        if error:
+            return current_app.api_response.error(
+                "Invalid password",
+                401
+            )
+        
+        # Log deletion
+        logger.info(f"Account deletion requested for user {user.id}")
+        
+        # Store user ID for final logging
+        user_id = user.id
+        user_email = mask_email(user.email)
+        
+        # Delete user and all related data (cascades)
+        db.session.delete(user)
+        db.session.commit()
+        
+        # Also delete from Supabase
+        try:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                token = auth_header[7:]
+                SupabaseAuthService.delete_user_account(token)
+        except Exception as e:
+            logger.error(f"Failed to delete from Supabase: {e}")
+        
+        logger.info(f"Account deleted successfully: {user_id} ({user_email})")
+        
+        return current_app.api_response.success(
+            None,
+            "Account deleted successfully"
+        )
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Delete account error: {e}")
         return current_app.api_response.error(
             "Failed to delete account",
-            500,
-            "DELETE_FAILED"
-        )
-
-
-@auth_bp.route("/stats", methods=["GET"])
-@require_auth
-def get_user_stats():
-    """Get user statistics"""
-    user = g.current_user
-    
-    try:
-        # Get user statistics
-        stats = {
-            "total_links": user.links.filter_by(is_deleted=False).count(),
-            "total_folders": user.folders.count(),
-            "total_tags": user.tags.count(),
-            "total_clicks": db.session.query(db.func.sum(user.links.filter_by(is_deleted=False).subquery().c.clicks)).scalar() or 0,
-            "active_links": user.links.filter_by(is_deleted=False, is_active=True).count(),
-            "pinned_links": user.links.filter_by(is_deleted=False, is_pinned=True).count(),
-            "broken_links": user.links.filter_by(is_deleted=False, is_broken=True).count(),
-        }
-        
-        # Get recent activity count
-        from datetime import datetime, timedelta
-        week_ago = datetime.utcnow() - timedelta(days=7)
-        stats["recent_activity"] = user.activity_logs.filter(
-            user.activity_logs.c.created_at >= week_ago
-        ).count()
-        
-        return current_app.api_response.success({
-            "stats": stats
-        })
-        
-    except Exception as e:
-        current_app.logger.error(f"Failed to get user stats: {e}")
-        return current_app.api_response.error(
-            "Failed to retrieve user statistics",
-            500,
-            "STATS_ERROR"
-        )
-
-
-@auth_bp.route("/sessions", methods=["GET"])
-@require_auth
-def get_user_sessions():
-    """Get user login sessions (Firebase doesn't track sessions, so return current session info)"""
-    user = g.current_user
-    claims = g.token_claims
-    
-    try:
-        session_info = {
-            "current_session": {
-                "user_id": user.id,
-                "email": user.email,
-                "login_time": claims.get("iat"),
-                "expires_at": claims.get("exp"),
-                "auth_provider": user.auth_provider,
-                "firebase_uid": user.firebase_uid
-            }
-        }
-        
-        return current_app.api_response.success(session_info)
-        
-    except Exception as e:
-        current_app.logger.error(f"Failed to get session info: {e}")
-        return current_app.api_response.error(
-            "Failed to retrieve session information",
-            500,
-            "SESSION_ERROR"
+            500
         )

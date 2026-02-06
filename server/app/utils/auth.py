@@ -6,6 +6,9 @@ from typing import Optional
 
 from flask import request, g, current_app
 
+from app.services.supabase_auth import SupabaseAuthService
+from app.services.redis_service import RedisService
+
 logger = logging.getLogger(__name__)
 
 
@@ -16,50 +19,51 @@ def extract_token_from_header() -> Optional[str]:
     if auth_header.startswith("Bearer "):
         return auth_header[7:]
     
-    return None
-
-
-def extract_token_from_body() -> Optional[str]:
-    """Extract token from request body as fallback"""
-    try:
-        data = request.get_json()
-        if data and 'idToken' in data:
-            return data['idToken']
-    except Exception:
-        pass
+    # Also check for lowercase 'bearer'
+    if auth_header.lower().startswith("bearer "):
+        return auth_header[7:]
     
     return None
 
 
 def require_auth(f):
-    """Decorator that requires valid Firebase ID token and provisions user"""
+    """Decorator that requires valid Supabase JWT and provisions user"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Import here to avoid circular imports
-        from app.services.firebase_auth import FirebaseAuthService
-        
-        # Extract token from header first, then from body as fallback
+        # Extract token
         token = extract_token_from_header()
         
         if not token:
-            token = extract_token_from_body()
-        
-        if not token:
-            logger.warning("No authentication token found in request")
             return current_app.api_response.error(
                 "Authentication required", 
                 401, 
                 "MISSING_TOKEN"
             )
         
-        # Log token for debugging (only first few characters)
-        logger.debug(f"Verifying token: {token[:20]}...")
+        # Check if token is blacklisted
+        try:
+            redis = RedisService()
+            # Extract JTI or use token prefix for blacklist check
+            import jwt as pyjwt
+            try:
+                unverified_payload = pyjwt.decode(token, options={"verify_signature": False})
+                jti = unverified_payload.get("jti") or token[:50]
+            except:
+                jti = token[:50]
+            
+            if redis.is_token_blacklisted(jti):
+                return current_app.api_response.error(
+                    "This session has been signed out", 
+                    401, 
+                    "TOKEN_REVOKED"
+                )
+        except Exception as e:
+            logger.debug(f"Blacklist check failed: {e}")
         
-        # Verify Firebase ID token
-        claims = FirebaseAuthService.verify_token(token)
+        # Verify Supabase JWT
+        payload = SupabaseAuthService.verify_token(token)
         
-        if not claims:
-            logger.warning("Token verification failed")
+        if not payload:
             return current_app.api_response.error(
                 "Invalid or expired token", 
                 401, 
@@ -67,7 +71,7 @@ def require_auth(f):
             )
         
         # Get or create user
-        user, error = FirebaseAuthService.get_or_create_user(claims)
+        user, error = SupabaseAuthService.get_or_create_user(payload)
         
         if not user:
             logger.error(f"User provisioning failed: {error}")
@@ -77,106 +81,94 @@ def require_auth(f):
                 "AUTH_ERROR"
             )
         
-        # Log successful authentication
-        logger.info(f"User authenticated: {user.email}")
+        # Check if user is active
+        if not user.is_active:
+            return current_app.api_response.error(
+                "Account has been deactivated", 
+                403, 
+                "ACCOUNT_INACTIVE"
+            )
         
         # Attach to request context
         g.current_user = user
         g.current_user_id = user.id
-        g.token_claims = claims
+        g.token_payload = payload
+        g.token = token
         
         return f(*args, **kwargs)
     
     return decorated_function
+
+
+# Compatibility alias for existing code
+jwt_required = require_auth
 
 
 def optional_auth(f):
     """Decorator that optionally authenticates user if token is present"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Import here to avoid circular imports
-        from app.services.firebase_auth import FirebaseAuthService
-        
         # Try to extract token
         token = extract_token_from_header()
-        if not token:
-            token = extract_token_from_body()
         
         if token:
-            # Verify Firebase ID token
-            claims = FirebaseAuthService.verify_token(token)
-            
-            if claims:
-                # Get or create user
-                user, error = FirebaseAuthService.get_or_create_user(claims)
+            try:
+                # Check blacklist
+                redis = RedisService()
+                import jwt as pyjwt
+                try:
+                    unverified_payload = pyjwt.decode(token, options={"verify_signature": False})
+                    jti = unverified_payload.get("jti") or token[:50]
+                except:
+                    jti = token[:50]
                 
-                if user:
-                    # Attach to request context
-                    g.current_user = user
-                    g.current_user_id = user.id
-                    g.token_claims = claims
-                else:
-                    logger.warning(f"User provisioning failed: {error}")
+                if not redis.is_token_blacklisted(jti):
+                    # Verify token
+                    payload = SupabaseAuthService.verify_token(token)
+                    
+                    if payload:
+                        # Get user
+                        user, _ = SupabaseAuthService.get_or_create_user(payload)
+                        
+                        if user and user.is_active:
+                            g.current_user = user
+                            g.current_user_id = user.id
+                            g.token_payload = payload
+                            g.token = token
+            except Exception as e:
+                logger.debug(f"Optional auth failed: {e}")
         
-        # Set defaults if no user authenticated
+        # Continue even if auth failed/missing
         if not hasattr(g, 'current_user'):
             g.current_user = None
             g.current_user_id = None
-            g.token_claims = None
+            g.token_payload = None
+            g.token = None
         
         return f(*args, **kwargs)
     
     return decorated_function
 
 
-def get_current_user():
-    """Get current authenticated user from request context"""
-    return getattr(g, 'current_user', None)
-
-
-def get_current_user_id():
-    """Get current authenticated user ID from request context"""
-    return getattr(g, 'current_user_id', None)
-
-
-def get_token_claims():
-    """Get current token claims from request context"""
-    return getattr(g, 'token_claims', None)
-
-
-def is_authenticated():
-    """Check if current request is authenticated"""
-    return getattr(g, 'current_user', None) is not None
-
-
-def require_admin(f):
-    """Decorator that requires admin privileges (can be extended later)"""
+def admin_required(f):
+    """Decorator that requires admin privileges"""
     @wraps(f)
+    @require_auth
     def decorated_function(*args, **kwargs):
-        if not is_authenticated():
-            return current_app.api_response.error(
-                "Authentication required", 
-                401, 
-                "UNAUTHORIZED"
-            )
+        # Check if user has admin role
+        user = g.current_user
         
-        user = get_current_user()
+        # You can implement admin check based on your needs
+        # For example, check a field in user model or a specific claim in JWT
+        # For now, we'll use email domain as example
         
-        # For now, check if user email is in admin list
-        # You can extend this logic as needed
-        admin_emails = current_app.config.get('ADMIN_EMAILS', [])
-        if user.email not in admin_emails:
+        if not user.email.endswith("@savlink.app"):  # Adjust this logic
             return current_app.api_response.error(
                 "Admin access required", 
                 403, 
-                "FORBIDDEN"
+                "ADMIN_REQUIRED"
             )
         
         return f(*args, **kwargs)
     
     return decorated_function
-
-
-# Compatibility aliases for existing code
-jwt_required = require_auth
-get_jwt_identity = get_current_user_id

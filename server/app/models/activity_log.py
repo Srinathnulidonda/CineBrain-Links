@@ -9,17 +9,32 @@ from app.extensions import db
 
 
 class ActivityType(enum.Enum):
+    # User activities
+    USER_REGISTERED = "user_registered"
+    USER_LOGIN = "user_login"
+    USER_LOGOUT = "user_logout"
+    USER_UPDATED = "user_updated"
+    PASSWORD_RESET_REQUESTED = "password_reset_requested"
+    PASSWORD_CHANGED = "password_changed"
+    
+    # Link activities
     LINK_CREATED = "link_created"
     LINK_UPDATED = "link_updated"
     LINK_DELETED = "link_deleted"
     LINK_RESTORED = "link_restored"
     LINK_CLICKED = "link_clicked"
     LINK_SHARED = "link_shared"
+    
+    # Folder activities
     FOLDER_CREATED = "folder_created"
     FOLDER_UPDATED = "folder_updated"
     FOLDER_DELETED = "folder_deleted"
+    
+    # Tag activities
     TAG_CREATED = "tag_created"
     TAG_DELETED = "tag_deleted"
+    
+    # Bulk operations
     BULK_OPERATION = "bulk_operation"
 
 
@@ -35,7 +50,7 @@ class ActivityLog(db.Model):
     resource_id = db.Column(db.String(36), nullable=True, index=True)
     resource_title = db.Column(db.String(255), nullable=True)
 
-    extra_data = db.Column(db.JSON, nullable=True)  # RENAMED from 'metadata'
+    extra_data = db.Column(db.JSON, nullable=True)
 
     ip_address = db.Column(db.String(45), nullable=True)
     user_agent = db.Column(db.String(255), nullable=True)
@@ -54,7 +69,7 @@ class ActivityLog(db.Model):
         resource_type: str,
         resource_id: Optional[str] = None,
         resource_title: Optional[str] = None,
-        extra_data: Optional[dict] = None,  # RENAMED
+        extra_data: Optional[dict] = None,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
     ):
@@ -63,7 +78,7 @@ class ActivityLog(db.Model):
         self.resource_type = resource_type
         self.resource_id = resource_id
         self.resource_title = resource_title
-        self.extra_data = extra_data  # RENAMED
+        self.extra_data = extra_data
         self.ip_address = ip_address
         self.user_agent = user_agent
 

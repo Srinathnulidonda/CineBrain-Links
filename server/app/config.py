@@ -2,7 +2,6 @@
 
 import os
 import sys
-import json
 from datetime import timedelta
 from typing import List, Optional
 from dotenv import load_dotenv
@@ -46,25 +45,6 @@ def get_redis_url() -> Optional[str]:
     return redis_url
 
 
-def get_firebase_credentials():
-    """Get Firebase credentials from environment"""
-    # Try JSON string first (for production/cloud deployment)
-    credentials_json = os.environ.get("FIREBASE_ADMIN_CREDENTIALS")
-    if credentials_json:
-        try:
-            return json.loads(credentials_json)
-        except json.JSONDecodeError:
-            pass
-    
-    # Fallback to file path (for local development)
-    firebase_config_path = os.environ.get("FIREBASE_CONFIG")
-    if firebase_config_path and os.path.exists(firebase_config_path):
-        return firebase_config_path
-    
-    # Use Application Default Credentials (for Google Cloud/Firebase hosting)
-    return None
-
-
 def validate_config(config: 'Config', environment: str) -> List[str]:
     warnings = []
 
@@ -73,14 +53,15 @@ def validate_config(config: 'Config', environment: str) -> List[str]:
             "DATABASE_URL is required. Set DATABASE_URL or individual PG* variables."
         )
 
-    # Firebase Auth validation
     if environment == "production":
-        if not config.FIREBASE_PROJECT_ID:
+        if not os.environ.get("JWT_SECRET_KEY"):
             raise ConfigurationError(
-                "FIREBASE_PROJECT_ID is required in production."
+                "JWT_SECRET_KEY must be explicitly set in production."
             )
-        if not config.FIREBASE_CONFIG and not config.FIREBASE_ADMIN_CREDENTIALS:
-            warnings.append("Firebase credentials not configured. Using Application Default Credentials.")
+        if not os.environ.get("SECRET_KEY"):
+            raise ConfigurationError(
+                "SECRET_KEY must be explicitly set in production."
+            )
 
     if not config.REDIS_URL:
         warnings.append("Redis not configured. Rate limiting will use memory storage.")
@@ -118,18 +99,12 @@ class Config:
         "connect_args": {"connect_timeout": 10}
     }
 
-    # Firebase Authentication Configuration
-    FIREBASE_PROJECT_ID = os.environ.get("FIREBASE_PROJECT_ID")
-    FIREBASE_CONFIG = get_firebase_credentials()
-    FIREBASE_WEB_API_KEY = os.environ.get("FIREBASE_WEB_API_KEY")  # For frontend use
-    FIREBASE_ADMIN_CREDENTIALS = os.environ.get("FIREBASE_ADMIN_CREDENTIALS")  # JSON string for production
+    JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", os.urandom(32).hex())
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=1)
+    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
+    JWT_BLACKLIST_ENABLED = True
+    JWT_BLACKLIST_TOKEN_CHECKS = ["access", "refresh"]
 
-    # Supabase Database Configuration (keeping for database connection)
-    SUPABASE_URL = os.environ.get("SUPABASE_URL")  # Optional: for direct DB operations
-    SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")  # Optional: for admin operations
-    SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")  # Optional: for client-side operations
-
-    # Redis Configuration
     REDIS_URL = get_redis_url()
     RATELIMIT_STORAGE_URI = REDIS_URL if REDIS_URL else "memory://"
     RATELIMIT_DEFAULT = "200 per hour"
@@ -137,13 +112,11 @@ class Config:
     RATELIMIT_STRATEGY = "fixed-window"
     RATELIMIT_KEY_PREFIX = "savlink_rl"
 
-    # Cache Configuration
     CACHE_TTL_LINK = 3600
     CACHE_TTL_BLACKLIST = 86400 * 31
     CACHE_TTL_METADATA = 86400
     CACHE_TTL_STATS = 300
 
-    # Email Configuration (for notifications only, not auth)
     BREVO_API_KEY = os.environ.get("BREVO_API_KEY")
     BREVO_SMTP_SERVER = os.environ.get("BREVO_SMTP_SERVER", "smtp-relay.brevo.com")
     BREVO_SMTP_PORT = int(os.environ.get("BREVO_SMTP_PORT", 587))
@@ -153,7 +126,6 @@ class Config:
     BREVO_SENDER_NAME = os.environ.get("BREVO_SENDER_NAME", "Savlink")
     REPLY_TO_EMAIL = os.environ.get("REPLY_TO_EMAIL")
 
-    # URL Configuration
     PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://savlink.vercel.app")
     FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://savlink.vercel.app")
     
@@ -166,7 +138,9 @@ class Config:
 
     CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",")]
 
-    # Slug Configuration
+    PASSWORD_RESET_TOKEN_EXPIRES = 3600
+    PASSWORD_RESET_SALT = os.environ.get("PASSWORD_RESET_SALT", os.urandom(16).hex())
+
     RESERVED_SLUGS = {
         "admin", "api", "login", "logout", "register", "signup",
         "dashboard", "settings", "profile", "account", "user", "users",
@@ -179,60 +153,32 @@ class Config:
         "s", "share", "shared", "public", "folder", "folders",
         "tag", "tags", "search", "bulk", "export", "import",
         "activity", "template", "templates", "category", "categories",
-        "qr", "preview", "embed", "widget", "redirect", "firebase"
+        "qr", "preview", "embed", "widget", "redirect"
     }
 
     SLUG_MIN_LENGTH = 3
     SLUG_MAX_LENGTH = 32
     AUTO_SLUG_LENGTH = 7
 
-    # Limits Configuration
     MAX_LINKS_PER_USER = int(os.environ.get("MAX_LINKS_PER_USER", 10000))
     MAX_FOLDERS_PER_USER = int(os.environ.get("MAX_FOLDERS_PER_USER", 100))
     MAX_TAGS_PER_USER = int(os.environ.get("MAX_TAGS_PER_USER", 500))
     MAX_TAGS_PER_LINK = int(os.environ.get("MAX_TAGS_PER_LINK", 20))
 
-    # Health and Monitoring
     HEALTH_CHECK_TIMEOUT = 10
     HEALTH_CHECK_INTERVAL_HOURS = 24
     METADATA_FETCH_TIMEOUT = 10
 
-    # Data Retention
     CLICK_RETENTION_DAYS = int(os.environ.get("CLICK_RETENTION_DAYS", 365))
     ACTIVITY_RETENTION_DAYS = int(os.environ.get("ACTIVITY_RETENTION_DAYS", 90))
     HEALTH_CHECK_RETENTION_DAYS = int(os.environ.get("HEALTH_CHECK_RETENTION_DAYS", 30))
     TRASH_RETENTION_DAYS = int(os.environ.get("TRASH_RETENTION_DAYS", 30))
 
-    # Feature Flags
     ENABLE_WEEKLY_DIGEST = os.environ.get("ENABLE_WEEKLY_DIGEST", "false").lower() == "true"
     ENABLE_EXPIRATION_ALERTS = os.environ.get("ENABLE_EXPIRATION_ALERTS", "true").lower() == "true"
     ENABLE_BROKEN_LINK_ALERTS = os.environ.get("ENABLE_BROKEN_LINK_ALERTS", "true").lower() == "true"
 
-    # JWT Configuration (for internal tokens, not auth)
-    JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", SECRET_KEY)
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)
-    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
-    JWT_ALGORITHM = "HS256"
-    JWT_BLACKLIST_ENABLED = True
-    JWT_BLACKLIST_TOKEN_CHECKS = ["access", "refresh"]
-
-    # Security Configuration
-    WTF_CSRF_ENABLED = True
-    WTF_CSRF_TIME_LIMIT = None
-    SESSION_COOKIE_SECURE = True
-    SESSION_COOKIE_HTTPONLY = True
-    SESSION_COOKIE_SAMESITE = 'Lax'
-    PERMANENT_SESSION_LIFETIME = timedelta(days=31)
-
-    # Monitoring
     SENTRY_DSN = os.environ.get("SENTRY_DSN")
-
-    # Google Cloud Configuration (for Firebase Admin SDK)
-    GOOGLE_APPLICATION_CREDENTIALS = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-
-    # Password Reset Configuration (for custom reset flow)
-    PASSWORD_RESET_TOKEN_EXPIRY = 3600  # 1 hour in seconds
-    PASSWORD_RESET_EMAIL_ENABLED = True
 
 
 class DevelopmentConfig(Config):
@@ -240,18 +186,8 @@ class DevelopmentConfig(Config):
     FLASK_ENV = "development"
     
     PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://localhost:5000")
-    FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+    FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
     BASE_URL = os.environ.get("BASE_URL", "http://localhost:5000")
-    
-    # Disable security features in development
-    SESSION_COOKIE_SECURE = False
-    WTF_CSRF_ENABLED = False
-    
-    # More lenient rate limiting in development
-    RATELIMIT_DEFAULT = "1000 per hour"
-    
-    # Firebase config for development
-    FIREBASE_CONFIG = os.environ.get("FIREBASE_CONFIG", "./firebase-service-account.json")
 
 
 class TestingConfig(Config):
@@ -259,26 +195,12 @@ class TestingConfig(Config):
     FLASK_ENV = "testing"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     RATELIMIT_STORAGE_URI = "memory://"
+    JWT_SECRET_KEY = "test-secret-key"
     SECRET_KEY = "test-secret-key"
-    JWT_SECRET_KEY = "test-jwt-secret"
     
     PUBLIC_BASE_URL = "http://localhost:5000"
     FRONTEND_URL = "http://localhost:3000"
     BASE_URL = "http://localhost:5000"
-    
-    # Disable external services in testing
-    FIREBASE_PROJECT_ID = "test-project"
-    FIREBASE_CONFIG = None
-    FIREBASE_ADMIN_CREDENTIALS = None
-    
-    # Disable security features in testing
-    SESSION_COOKIE_SECURE = False
-    WTF_CSRF_ENABLED = False
-    
-    # Disable email in testing
-    BREVO_API_KEY = None
-    BREVO_SMTP_PASSWORD = None
-    PASSWORD_RESET_EMAIL_ENABLED = False
 
 
 class ProductionConfig(Config):
@@ -299,12 +221,6 @@ class ProductionConfig(Config):
     SESSION_COOKIE_SECURE = True
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
-    
-    # Stricter security in production
-    WTF_CSRF_ENABLED = True
-    
-    # Firebase Admin SDK will use Application Default Credentials if no explicit config
-    FIREBASE_CONFIG = get_firebase_credentials()
 
 
 config_by_name = {
