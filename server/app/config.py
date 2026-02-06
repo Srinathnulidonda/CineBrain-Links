@@ -53,14 +53,14 @@ def validate_config(config: 'Config', environment: str) -> List[str]:
             "DATABASE_URL is required. Set DATABASE_URL or individual PG* variables."
         )
 
-    # Supabase Auth validation
+    # Firebase Auth validation
     if environment == "production":
-        if not config.SUPABASE_URL:
+        if not config.FIREBASE_PROJECT_ID:
             raise ConfigurationError(
-                "SUPABASE_URL is required in production."
+                "FIREBASE_PROJECT_ID is required in production."
             )
-        if not config.SUPABASE_PROJECT_ID:
-            warnings.append("SUPABASE_PROJECT_ID not set. Will extract from SUPABASE_URL.")
+        if not config.FIREBASE_CONFIG:
+            warnings.append("FIREBASE_CONFIG not set. Using Application Default Credentials.")
 
     if not config.REDIS_URL:
         warnings.append("Redis not configured. Rate limiting will use memory storage.")
@@ -98,10 +98,15 @@ class Config:
         "connect_args": {"connect_timeout": 10}
     }
 
-    # Supabase Authentication Configuration
-    SUPABASE_URL = os.environ.get("SUPABASE_URL")  # https://xxx.supabase.co
-    SUPABASE_PROJECT_ID = os.environ.get("SUPABASE_PROJECT_ID")  # Will extract from URL if not set
-    SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")  # For frontend use (not needed in backend)
+    # Firebase Authentication Configuration
+    FIREBASE_PROJECT_ID = os.environ.get("FIREBASE_PROJECT_ID")
+    FIREBASE_CONFIG = os.environ.get("FIREBASE_CONFIG")  # Path to service account JSON or dict
+    FIREBASE_WEB_API_KEY = os.environ.get("FIREBASE_WEB_API_KEY")  # For frontend use
+
+    # Supabase Database Configuration (keeping for database connection)
+    SUPABASE_URL = os.environ.get("SUPABASE_URL")  # Optional: for direct DB operations
+    SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")  # Optional: for admin operations
+    SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")  # Optional: for client-side operations
 
     # Redis Configuration
     REDIS_URL = get_redis_url()
@@ -153,7 +158,7 @@ class Config:
         "s", "share", "shared", "public", "folder", "folders",
         "tag", "tags", "search", "bulk", "export", "import",
         "activity", "template", "templates", "category", "categories",
-        "qr", "preview", "embed", "widget", "redirect"
+        "qr", "preview", "embed", "widget", "redirect", "firebase"
     }
 
     SLUG_MIN_LENGTH = 3
@@ -182,8 +187,28 @@ class Config:
     ENABLE_EXPIRATION_ALERTS = os.environ.get("ENABLE_EXPIRATION_ALERTS", "true").lower() == "true"
     ENABLE_BROKEN_LINK_ALERTS = os.environ.get("ENABLE_BROKEN_LINK_ALERTS", "true").lower() == "true"
 
+    # JWT Configuration (for internal tokens, not auth)
+    JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", SECRET_KEY)
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)
+    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
+    JWT_ALGORITHM = "HS256"
+    JWT_BLACKLIST_ENABLED = True
+    JWT_BLACKLIST_TOKEN_CHECKS = ["access", "refresh"]
+
+    # Security Configuration
+    WTF_CSRF_ENABLED = True
+    WTF_CSRF_TIME_LIMIT = None
+    SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    PERMANENT_SESSION_LIFETIME = timedelta(days=31)
+
     # Monitoring
     SENTRY_DSN = os.environ.get("SENTRY_DSN")
+
+    # Firebase Admin SDK Configuration
+    FIREBASE_ADMIN_CREDENTIALS = os.environ.get("FIREBASE_ADMIN_CREDENTIALS")  # JSON string of service account
+    GOOGLE_APPLICATION_CREDENTIALS = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")  # Path to service account file
 
 
 class DevelopmentConfig(Config):
@@ -193,6 +218,13 @@ class DevelopmentConfig(Config):
     PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://localhost:5000")
     FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
     BASE_URL = os.environ.get("BASE_URL", "http://localhost:5000")
+    
+    # Disable security features in development
+    SESSION_COOKIE_SECURE = False
+    WTF_CSRF_ENABLED = False
+    
+    # More lenient rate limiting in development
+    RATELIMIT_DEFAULT = "1000 per hour"
 
 
 class TestingConfig(Config):
@@ -201,10 +233,23 @@ class TestingConfig(Config):
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     RATELIMIT_STORAGE_URI = "memory://"
     SECRET_KEY = "test-secret-key"
+    JWT_SECRET_KEY = "test-jwt-secret"
     
     PUBLIC_BASE_URL = "http://localhost:5000"
     FRONTEND_URL = "http://localhost:3000"
     BASE_URL = "http://localhost:5000"
+    
+    # Disable external services in testing
+    FIREBASE_PROJECT_ID = "test-project"
+    FIREBASE_CONFIG = None
+    
+    # Disable security features in testing
+    SESSION_COOKIE_SECURE = False
+    WTF_CSRF_ENABLED = False
+    
+    # Disable email in testing
+    BREVO_API_KEY = None
+    BREVO_SMTP_PASSWORD = None
 
 
 class ProductionConfig(Config):
@@ -225,6 +270,9 @@ class ProductionConfig(Config):
     SESSION_COOKIE_SECURE = True
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
+    
+    # Stricter security in production
+    WTF_CSRF_ENABLED = True
 
 
 config_by_name = {

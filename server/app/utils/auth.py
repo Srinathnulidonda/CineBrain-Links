@@ -1,70 +1,95 @@
-# server/app/utils/auth.py
+# server/app/routes/auth.py
 
-import logging
-from functools import wraps
-from typing import Optional
+from flask import Blueprint, request, g
+from app.utils.auth import require_auth
 
-from flask import request, g, current_app
+auth_bp = Blueprint("auth", __name__)
 
-from app.services.supabase_auth import SupabaseAuthService
-
-logger = logging.getLogger(__name__)
-
-
-def extract_token_from_header() -> Optional[str]:
-    """Extract Bearer token from Authorization header"""
-    auth_header = request.headers.get("Authorization", "")
+@auth_bp.route("/verify", methods=["POST"])
+def verify_token():
+    """Verify Firebase token and return user info"""
+    from app.services.firebase_auth import FirebaseAuthService
     
-    if auth_header.startswith("Bearer "):
-        return auth_header[7:]
+    data = request.get_json()
+    id_token = data.get("idToken")
     
-    return None
-
-
-def require_auth(f):
-    """Decorator that requires valid Supabase JWT and provisions user"""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        # Extract token
-        token = extract_token_from_header()
-        
-        if not token:
-            return current_app.api_response.error(
-                "Authentication required", 
-                401, 
-                "MISSING_TOKEN"
-            )
-        
-        # Verify Supabase JWT
-        payload = SupabaseAuthService.verify_token(token)
-        
-        if not payload:
-            return current_app.api_response.error(
-                "Invalid or expired token", 
-                401, 
-                "INVALID_TOKEN"
-            )
-        
-        # Get or create user
-        user, error = SupabaseAuthService.get_or_create_user(payload)
-        
-        if not user:
-            logger.error(f"User provisioning failed: {error}")
-            return current_app.api_response.error(
-                "Authentication failed", 
-                500, 
-                "AUTH_ERROR"
-            )
-        
-        # Attach to request context
-        g.current_user = user
-        g.current_user_id = user.id
-        g.token_payload = payload
-        
-        return f(*args, **kwargs)
+    if not id_token:
+        return current_app.api_response.error(
+            "ID token is required",
+            400,
+            "MISSING_ID_TOKEN"
+        )
     
-    return decorated_function
+    # Verify Firebase token
+    claims = FirebaseAuthService.verify_token(id_token)
+    if not claims:
+        return current_app.api_response.error(
+            "Invalid or expired token",
+            401,
+            "INVALID_TOKEN"
+        )
+    
+    # Get or create user
+    user, error = FirebaseAuthService.get_or_create_user(claims)
+    if not user:
+        return current_app.api_response.error(
+            error or "Authentication failed",
+            500,
+            "AUTH_ERROR"
+        )
+    
+    return current_app.api_response.success({
+        "user": user.to_dict()
+    })
 
 
-# Compatibility alias for existing code
-jwt_required = require_auth
+@auth_bp.route("/me", methods=["GET"])
+@require_auth
+def get_current_user():
+    """Get current user profile"""
+    return current_app.api_response.success({
+        "user": g.current_user.to_dict()
+    })
+
+
+@auth_bp.route("/me", methods=["PUT"])
+@require_auth
+def update_profile():
+    """Update user profile"""
+    from app.extensions import db
+    
+    data = request.get_json()
+    user = g.current_user
+    
+    # Update allowed fields
+    if "name" in data:
+        user.name = data["name"].strip() if data["name"] else None
+    
+    if "default_click_tracking" in data:
+        user.default_click_tracking = bool(data["default_click_tracking"])
+    
+    if "default_privacy_level" in data:
+        if data["default_privacy_level"] in ["private", "unlisted", "public"]:
+            user.default_privacy_level = data["default_privacy_level"]
+    
+    if "data_retention_days" in data:
+        days = data["data_retention_days"]
+        if days is None or (isinstance(days, int) and 1 <= days <= 365):
+            user.data_retention_days = days
+    
+    db.session.commit()
+    
+    return current_app.api_response.success({
+        "user": user.to_dict(),
+        "message": "Profile updated successfully"
+    })
+
+
+@auth_bp.route("/logout", methods=["POST"])
+@require_auth
+def logout():
+    """Logout endpoint (client should delete Firebase token)"""
+    # Note: Firebase tokens are stateless, so we just confirm logout
+    return current_app.api_response.success({
+        "message": "Logged out successfully"
+    })
