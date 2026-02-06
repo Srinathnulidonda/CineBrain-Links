@@ -59,21 +59,12 @@ def create_app(config_name: str = None) -> Flask:
 
     _log_startup(app, config_name)
     _init_extensions(app)
+    _setup_cors(app)
     _register_blueprints(app)
     _register_error_handlers(app)
     _setup_logging(app)
     _setup_jwt_callbacks(app)
     _init_sentry(app)
-
-    CORS(app, resources={
-        r"/api/*": {
-            "origins": app.config.get("CORS_ORIGINS", ["*"]),
-            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-            "allow_headers": ["Content-Type", "Authorization"],
-            "supports_credentials": True
-        },
-        r"/*": {"origins": "*"}
-    })
 
     @app.route("/health")
     def health():
@@ -146,6 +137,39 @@ def _init_extensions(app: Flask) -> None:
         logger.error(f"Rate limiter failed: {e}")
         app.config["RATELIMIT_STORAGE_URI"] = "memory://"
         limiter.init_app(app)
+
+
+def _setup_cors(app: Flask) -> None:
+    """Setup CORS configuration"""
+    cors_origins = app.config.get("CORS_ORIGINS", ["*"])
+    
+    # If CORS_ORIGINS is a string, split it
+    if isinstance(cors_origins, str):
+        cors_origins = [origin.strip() for origin in cors_origins.split(",")]
+    
+    # Add localhost variants for development
+    if app.config.get("FLASK_ENV") == "development" or app.config.get("DEBUG"):
+        cors_origins.extend([
+            "http://localhost:3000",
+            "http://localhost:5173", 
+            "https://localhost:3000",
+            "https://localhost:5173"
+        ])
+    
+    # Remove duplicates and empty strings
+    cors_origins = list(set([origin for origin in cors_origins if origin.strip()]))
+    
+    logger.info(f"CORS origins: {cors_origins}")
+    
+    CORS(app, 
+         origins=cors_origins,
+         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+         allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
+         supports_credentials=True,
+         expose_headers=["Content-Range", "X-Content-Range"],
+         send_wildcard=False,
+         vary_header=True
+    )
 
 
 def _init_database(app: Flask) -> None:
