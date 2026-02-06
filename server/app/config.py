@@ -190,19 +190,6 @@ class DevelopmentConfig(Config):
     BASE_URL = os.environ.get("BASE_URL", "http://localhost:5000")
 
 
-class TestingConfig(Config):
-    TESTING = True
-    FLASK_ENV = "testing"
-    SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
-    RATELIMIT_STORAGE_URI = "memory://"
-    JWT_SECRET_KEY = "test-secret-key"
-    SECRET_KEY = "test-secret-key"
-    
-    PUBLIC_BASE_URL = "http://localhost:5000"
-    FRONTEND_URL = "http://localhost:3000"
-    BASE_URL = "http://localhost:5000"
-
-
 class ProductionConfig(Config):
     DEBUG = False
     FLASK_ENV = "production"
