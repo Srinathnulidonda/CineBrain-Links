@@ -1,7 +1,6 @@
 // src/config/firebase.js
 import { initializeApp } from 'firebase/app'
 import { getAuth, connectAuthEmulator } from 'firebase/auth'
-import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore'
 
 const firebaseConfig = {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -15,14 +14,11 @@ const firebaseConfig = {
 // Initialize Firebase
 export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
-export const db = getFirestore(app)
 
-// Connect to emulators in development
-if (import.meta.env.DEV) {
-    try {
-        connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true })
-        connectFirestoreEmulator(db, 'localhost', 8080)
-    } catch (error) {
-        console.warn('Emulators may already be connected:', error)
-    }
+// Optional: Connect to emulator in development (only for testing)
+if (import.meta.env.DEV && import.meta.env.VITE_USE_AUTH_EMULATOR === 'true') {
+    connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true })
 }
+
+// Log environment
+console.log(`Firebase initialized in ${import.meta.env.MODE} mode`)
