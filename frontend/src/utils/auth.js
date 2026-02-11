@@ -27,10 +27,10 @@ googleProvider.setCustomParameters({
     prompt: 'select_account'
 })
 
-// Configure axios
+// Configure axios with longer timeout
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
 axios.defaults.baseURL = API_BASE_URL
-axios.defaults.timeout = 10000 // 10 second timeout
+axios.defaults.timeout = 15000 // Increase to 15 seconds
 
 // Add response interceptor for better error handling
 axios.interceptors.response.use(
@@ -43,7 +43,8 @@ axios.interceptors.response.use(
                 method: error.config?.method,
                 status: error.response?.status,
                 data: error.response?.data,
-                message: error.message
+                message: error.message,
+                code: error.code
             })
         }
         return Promise.reject(error)
@@ -70,7 +71,7 @@ const initializeAuth = async () => {
             try {
                 const result = await getRedirectResult(auth)
                 if (result?.user) {
-                    console.log('Redirect sign-in completed')
+                    console.log('🔄 Redirect sign-in completed')
                     await handleSuccessfulAuth(result.user)
 
                     // Clear any redirect flags
@@ -82,7 +83,7 @@ const initializeAuth = async () => {
                     }))
                 }
             } catch (redirectError) {
-                console.error('Redirect error:', redirectError)
+                console.error('❌ Redirect error:', redirectError)
                 sessionStorage.removeItem('auth_redirect_pending')
                 window.dispatchEvent(new CustomEvent('auth-redirect-error', {
                     detail: { error: redirectError }
@@ -92,7 +93,7 @@ const initializeAuth = async () => {
             authInitialized = true
             resolve(true)
         } catch (error) {
-            console.error('Auth initialization error:', error)
+            console.error('❌ Auth initialization error:', error)
             authInitialized = true
             resolve(false)
         }
@@ -114,10 +115,12 @@ async function handleSuccessfulAuth(firebaseUser) {
         // Configure axios with token
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
 
-        // Attempt to sync with backend
+        // Attempt to sync with backend with longer timeout for auth
         try {
+            console.log('🔄 Syncing with backend...')
+
             const response = await axios.get('/auth/me', {
-                timeout: 5000,
+                timeout: 10000, // 10 seconds for auth requests
                 validateStatus: (status) => status < 500 // Don't throw on 4xx errors
             })
 
@@ -128,26 +131,32 @@ async function handleSuccessfulAuth(firebaseUser) {
                     _syncedWithBackend: true
                 }
 
-                console.log('User synced with backend successfully')
+                console.log('✅ User synced with backend successfully')
             } else {
                 // Backend returned error but not 5xx
                 throw new Error(response.data?.error || 'Backend sync failed')
             }
         } catch (backendError) {
-            // Determine if this is a critical error
-            const isCriticalError = backendError.response?.status >= 500
+            // More specific error handling
             const errorDetails = {
                 message: backendError.message,
                 status: backendError.response?.status,
                 data: backendError.response?.data,
-                url: backendError.config?.url
+                url: backendError.config?.url,
+                code: backendError.code,
+                timestamp: new Date().toISOString()
             }
 
-            // Log appropriately based on error severity
-            if (isCriticalError) {
-                console.error('Backend sync error:', errorDetails)
+            if (backendError.code === 'ECONNABORTED') {
+                console.warn('⏰ Backend sync timeout - using Firebase data as fallback')
+            } else if (backendError.response?.status >= 500) {
+                console.error('🔥 Backend server error:', errorDetails)
+            } else if (backendError.response?.status >= 400) {
+                console.warn('⚠️ Backend client error:', errorDetails)
+            } else if (backendError.code === 'NETWORK_ERROR') {
+                console.warn('🌐 Network error - using Firebase data as fallback')
             } else {
-                console.warn('Backend sync failed, using Firebase data:', errorDetails)
+                console.warn('⚠️ Backend sync failed:', errorDetails)
             }
 
             // Use Firebase data as fallback
@@ -168,13 +177,12 @@ async function handleSuccessfulAuth(firebaseUser) {
                 _fallback: true
             }
 
-            // Don't throw - continue with Firebase data
-            console.info('Continuing with Firebase data (backend sync will retry on next request)')
+            console.info('📱 Continuing with Firebase data (backend will sync on next request)')
         }
 
         return currentUser
     } catch (error) {
-        console.error('Error handling auth:', error)
+        console.error('❌ Error handling auth:', error)
         // Clear any partial auth state
         currentUser = null
         delete axios.defaults.headers.common['Authorization']
@@ -190,7 +198,7 @@ onAuthStateChanged(auth, async (firebaseUser) => {
         try {
             await handleSuccessfulAuth(firebaseUser)
         } catch (error) {
-            console.error('Auth state change error:', error)
+            console.error('❌ Auth state change error:', error)
             currentUser = null
         }
     } else {
@@ -215,11 +223,15 @@ const startTokenRefresh = () => {
 
                 // Try to sync with backend again if previous sync failed
                 if (currentUser && !currentUser._syncedWithBackend) {
-                    console.log('Retrying backend sync...')
-                    await handleSuccessfulAuth(auth.currentUser)
+                    console.log('🔄 Retrying backend sync...')
+                    try {
+                        await handleSuccessfulAuth(auth.currentUser)
+                    } catch (error) {
+                        console.log('⚠️ Backend sync retry failed, will try again later')
+                    }
                 }
             } catch (error) {
-                console.error('Token refresh failed:', error)
+                console.error('❌ Token refresh failed:', error)
             }
         }
     }, 55 * 60 * 1000) // Refresh every 55 minutes
@@ -277,7 +289,7 @@ export const AuthService = {
                 }
             }
         } catch (error) {
-            console.error('Registration error:', error)
+            console.error('❌ Registration error:', error)
             return {
                 success: false,
                 error: {
@@ -314,7 +326,7 @@ export const AuthService = {
                 message: 'Welcome back!'
             }
         } catch (error) {
-            console.error('Login error:', error)
+            console.error('❌ Login error:', error)
             return {
                 success: false,
                 error: {
@@ -367,14 +379,14 @@ export const AuthService = {
                     popupError.code === 'auth/popup-closed-by-user' ||
                     popupError.code === 'auth/cancelled-popup-request'
                 ) {
-                    console.log('Popup blocked/closed, falling back to redirect')
+                    console.log('🔄 Popup blocked/closed, falling back to redirect')
                     return this.loginWithGoogle(true)
                 }
 
                 throw popupError
             }
         } catch (error) {
-            console.error('Google login error:', error)
+            console.error('❌ Google login error:', error)
 
             // Don't treat user cancellation as an error
             if (
@@ -416,7 +428,7 @@ export const AuthService = {
 
             return { success: true }
         } catch (error) {
-            console.error('Logout error:', error)
+            console.error('❌ Logout error:', error)
             return {
                 success: false,
                 error: { message: 'Failed to sign out' }
@@ -439,7 +451,7 @@ export const AuthService = {
                 message: 'Password reset email sent. Please check your inbox.'
             }
         } catch (error) {
-            console.error('Password reset error:', error)
+            console.error('❌ Password reset error:', error)
             return {
                 success: false,
                 error: {
@@ -470,7 +482,7 @@ export const AuthService = {
                 message: 'Verification email sent'
             }
         } catch (error) {
-            console.error('Resend verification error:', error)
+            console.error('❌ Resend verification error:', error)
             return {
                 success: false,
                 error: { message: 'Failed to send verification email' }
@@ -498,6 +510,18 @@ export const AuthService = {
         return currentUser?._syncedWithBackend || false
     },
 
+    // Get sync status
+    getSyncStatus() {
+        if (!currentUser) return { synced: false, reason: 'not_authenticated' }
+
+        return {
+            synced: currentUser._syncedWithBackend || false,
+            fallback: currentUser._fallback || false,
+            error: currentUser._syncError || null,
+            lastSyncAttempt: currentUser._syncError?.timestamp || null
+        }
+    },
+
     // Get ID token
     async getIdToken(forceRefresh = false) {
         try {
@@ -506,7 +530,7 @@ export const AuthService = {
             }
             return null
         } catch (error) {
-            console.error('Get ID token error:', error)
+            console.error('❌ Get ID token error:', error)
             return null
         }
     },
@@ -528,8 +552,13 @@ export const AuthService = {
     async retryBackendSync() {
         if (auth.currentUser) {
             try {
+                console.log('🔄 Manual backend sync retry...')
                 await handleSuccessfulAuth(auth.currentUser)
-                return { success: true, synced: currentUser?._syncedWithBackend || false }
+                return {
+                    success: true,
+                    synced: currentUser?._syncedWithBackend || false,
+                    user: currentUser
+                }
             } catch (error) {
                 return { success: false, error: error.message }
             }

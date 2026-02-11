@@ -3,352 +3,479 @@
 import os
 import sys
 import logging
-from flask import Flask, jsonify
+from datetime import datetime
+from flask import Flask, jsonify, request, make_response
 from flask_cors import CORS
+from sqlalchemy import inspect, text
+from .config import Config
+from .extensions import db, migrate, redis_client
 
-from app.config import config_by_name, validate_config, ConfigurationError
-from app.extensions import db, jwt, migrate, limiter
-
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-
-class ApiResponse:
-    @staticmethod
-    def success(data=None, message=None, status=200):
-        response = {"success": True}
-        if message:
-            response["message"] = message
-        if data is not None:
-            response["data"] = data
-        return jsonify(response), status
-
-    @staticmethod
-    def error(message, status=400, code=None):
-        response = {
-            "success": False,
-            "error": {
-                "message": message
-            }
-        }
-        if code:
-            response["error"]["code"] = code
-        return jsonify(response), status
-
-
-def create_app(config_name: str = None) -> Flask:
-    if config_name is None:
-        if os.environ.get("RAILWAY_ENVIRONMENT"):
-            config_name = "production"
-        else:
-            config_name = os.environ.get("FLASK_ENV", "production")
-
+def create_app(config_class=Config):
+    """Create and configure the Flask application"""
     app = Flask(__name__)
-
-    config_class = config_by_name.get(config_name, config_by_name["production"])
     app.config.from_object(config_class)
-
-    try:
-        warnings = validate_config(config_class, config_name)
-        for warning in warnings:
-            logger.warning(f"Config: {warning}")
-    except ConfigurationError as e:
-        logger.critical(f"Configuration error: {e}")
-        sys.exit(1)
-
-    app.api_response = ApiResponse
-
-    _log_startup(app, config_name)
-    _init_extensions(app)
-    _setup_cors(app)
-    _register_blueprints(app)
-    _register_error_handlers(app)
-    _setup_logging(app)
-    _setup_jwt_callbacks(app)
-    _init_sentry(app)
-
-    @app.route("/health")
-    def health():
-        status = {
-            "status": "healthy",
-            "service": "Savlink",
-            "version": app.config["APP_VERSION"]
-        }
-
-        try:
-            db.session.execute(db.text("SELECT 1"))
-            db.session.commit()
-            status["database"] = "connected"
-        except Exception as e:
-            status["database"] = "unavailable"
-            status["status"] = "degraded"
-            logger.warning(f"Health check: database unavailable - {e}")
-
-        try:
-            from app.services.redis_service import RedisService
-            redis_svc = RedisService()
-            if redis_svc.client:
-                redis_svc.client.ping()
-                status["cache"] = "connected"
-            else:
-                status["cache"] = "not configured"
-        except Exception:
-            status["cache"] = "unavailable"
-
-        code = 200 if status["status"] == "healthy" else 503
-        return jsonify(status), code
-
-    @app.route("/")
-    def root():
-        return jsonify({
-            "service": "Savlink API",
-            "version": app.config["APP_VERSION"],
-            "status": "running",
-            "documentation": "/api",
-            "health": "/health"
-        }), 200
-
+    
+    # Initialize extensions
+    initialize_extensions(app)
+    
+    # Initialize database and Firebase in app context
     with app.app_context():
-        _init_database(app)
-        _seed_categories(app)
-
+        initialize_database(app)
+        initialize_firebase(app)
+    
+    # Register middleware
+    register_middleware(app)
+    
+    # Register blueprints
+    register_blueprints(app)
+    
+    # Register error handlers
+    register_error_handlers(app)
+    
+    # Register root endpoints
+    register_root_endpoints(app)
+    
+    logger.info(f"Application initialized in {app.config.get('FLASK_ENV', 'production')} mode")
+    
     return app
 
-
-def _log_startup(app: Flask, config_name: str) -> None:
-    redis_status = "configured" if app.config.get("REDIS_URL") else "memory-only"
-    public_url = app.config.get("PUBLIC_BASE_URL")
-    print(f"\n[Savlink] Starting in {config_name} mode")
-    print(f"[Savlink] Public URL: {public_url}")
-    print(f"[Savlink] Backend URL: {app.config.get('BASE_URL')}")
-    print(f"[Savlink] Cache: {redis_status}")
-    print(f"[Savlink] Railway: {app.config.get('IS_RAILWAY', False)}\n")
-
-
-def _init_extensions(app: Flask) -> None:
+def initialize_extensions(app):
+    """Initialize Flask extensions"""
+    # Database
     db.init_app(app)
-    jwt.init_app(app)
-    migrate.init_app(app, db)
-
-    try:
-        limiter.init_app(app)
-        storage = "Redis" if app.config.get("REDIS_URL") else "memory"
-        logger.info(f"Rate limiter initialized ({storage} storage)")
-    except Exception as e:
-        logger.error(f"Rate limiter failed: {e}")
-        app.config["RATELIMIT_STORAGE_URI"] = "memory://"
-        limiter.init_app(app)
-
-
-def _setup_cors(app: Flask) -> None:
-    """Setup CORS configuration"""
-    cors_origins = app.config.get("CORS_ORIGINS", ["*"])
+    migrate.init_app(app, db, directory='app/migrations')
     
-    # If CORS_ORIGINS is a string, split it
-    if isinstance(cors_origins, str):
-        cors_origins = [origin.strip() for origin in cors_origins.split(",")]
+    # CORS configuration for production
+    cors_origins = [
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'http://localhost:5174',
+        'https://savlink.vercel.app',
+        app.config.get('BASE_URL', 'https://savlink.vercel.app')
+    ]
     
-    # Add localhost variants for development
-    if app.config.get("FLASK_ENV") == "development" or app.config.get("DEBUG"):
-        cors_origins.extend([
-            "http://localhost:3000",
-            "http://localhost:5173", 
-            "https://localhost:3000",
-            "https://localhost:5173"
-        ])
+    # Remove duplicates and None values
+    cors_origins = list(filter(None, list(dict.fromkeys(cors_origins))))
     
-    # Remove duplicates and empty strings
-    cors_origins = list(set([origin for origin in cors_origins if origin.strip()]))
-    
-    logger.info(f"CORS origins: {cors_origins}")
-    
-    CORS(app, 
-         origins=cors_origins,
-         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-         allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
+    CORS(app,
+         resources={r"/*": {"origins": cors_origins}},
          supports_credentials=True,
-         expose_headers=["Content-Range", "X-Content-Range"],
-         send_wildcard=False,
-         vary_header=True
-    )
+         allow_headers=['Content-Type', 'Authorization', 'X-Requested-With'],
+         methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+         expose_headers=['Content-Type', 'Authorization'],
+         max_age=3600)
+    
+    logger.info(f"CORS initialized with origins: {cors_origins}")
+    logger.info(f"Redis client: {'Connected' if redis_client else 'Not configured'}")
 
-
-def _init_database(app: Flask) -> None:
+def initialize_database(app):
+    """Initialize database with auto-migration and table creation"""
     try:
-        db.session.execute(db.text("SELECT 1"))
-        db.session.commit()
-
-        from sqlalchemy import inspect
-        inspector = inspect(db.engine)
-        if len(inspector.get_table_names()) < 2:
-            db.create_all()
-            logger.info("Database tables created")
-        else:
-            logger.info("Database connected")
-
-    except Exception as e:
-        logger.error(f"Database initialization failed: {e}")
-
-
-def _seed_categories(app: Flask) -> None:
-    try:
-        from app.models.category import Category
+        # Import all models to ensure they're registered with SQLAlchemy
+        from .models import User, EmergencyToken
         
-        if Category.query.count() > 0:
+        # Test database connection
+        try:
+            with db.engine.connect() as conn:
+                result = conn.execute(text('SELECT 1'))
+                logger.info("Database connection successful")
+        except Exception as conn_error:
+            logger.error(f"Database connection failed: {conn_error}")
+            if app.config.get('FLASK_ENV') == 'production':
+                # In production, this is critical
+                raise
             return
         
-        default_categories = [
-            {"name": "Work", "slug": "work", "icon": "briefcase", "color": "#3B82F6"},
-            {"name": "Personal", "slug": "personal", "icon": "user", "color": "#10B981"},
-            {"name": "Shopping", "slug": "shopping", "icon": "shopping-cart", "color": "#F59E0B"},
-            {"name": "Social", "slug": "social", "icon": "users", "color": "#EC4899"},
-            {"name": "News", "slug": "news", "icon": "newspaper", "color": "#6366F1"},
-            {"name": "Entertainment", "slug": "entertainment", "icon": "film", "color": "#8B5CF6"},
-            {"name": "Education", "slug": "education", "icon": "book-open", "color": "#14B8A6"},
-            {"name": "Finance", "slug": "finance", "icon": "dollar-sign", "color": "#22C55E"},
-            {"name": "Health", "slug": "health", "icon": "heart", "color": "#EF4444"},
-            {"name": "Travel", "slug": "travel", "icon": "map", "color": "#06B6D4"},
-            {"name": "Food", "slug": "food", "icon": "utensils", "color": "#F97316"},
-            {"name": "Technology", "slug": "technology", "icon": "cpu", "color": "#64748B"},
-            {"name": "Other", "slug": "other", "icon": "folder", "color": "#94A3B8"},
-        ]
+        # Create tables if they don't exist (safe for production)
+        try:
+            db.create_all()
+            logger.info("Database tables created/verified")
+        except Exception as create_error:
+            logger.error(f"Error creating tables: {create_error}")
+            # Continue anyway - tables might already exist
         
-        for i, cat_data in enumerate(default_categories):
-            category = Category(
-                name=cat_data["name"],
-                slug=cat_data["slug"],
-                icon=cat_data["icon"],
-                color=cat_data["color"],
-                sort_order=i
-            )
-            db.session.add(category)
-        
-        db.session.commit()
-        logger.info("Default categories seeded")
-        
+        # Verify tables
+        try:
+            inspector = inspect(db.engine)
+            tables = inspector.get_table_names()
+            logger.info(f"Existing database tables: {tables}")
+            
+            # Check for required tables
+            required_tables = ['users', 'emergency_tokens']
+            missing_tables = set(required_tables) - set(tables)
+            
+            if missing_tables:
+                logger.warning(f"Missing required tables: {missing_tables}")
+                # Try to create missing tables one more time
+                db.create_all()
+                
+                # Verify again
+                inspector = inspect(db.engine)
+                tables = inspector.get_table_names()
+                still_missing = set(required_tables) - set(tables)
+                
+                if still_missing:
+                    logger.error(f"Failed to create tables: {still_missing}")
+                    if app.config.get('FLASK_ENV') == 'production':
+                        raise Exception(f"Required tables missing: {still_missing}")
+                else:
+                    logger.info("Missing tables created successfully")
+            else:
+                logger.info("All required tables are present")
+                
+        except Exception as verify_error:
+            logger.error(f"Error verifying tables: {verify_error}")
+            
     except Exception as e:
-        db.session.rollback()
-        logger.warning(f"Category seeding failed: {e}")
+        logger.error(f"Database initialization error: {e}", exc_info=True)
+        if app.config.get('FLASK_ENV') == 'production':
+            # In production, database is critical
+            raise
 
+def initialize_firebase(app):
+    """Initialize Firebase Admin SDK with error handling"""
+    try:
+        from .auth.firebase import initialize_firebase as init_firebase
+        
+        # Check if Firebase config is available
+        firebase_config = app.config.get('FIREBASE_CONFIG_JSON')
+        if not firebase_config:
+            logger.warning("FIREBASE_CONFIG_JSON not configured - Firebase features disabled")
+            app.config['FIREBASE_ENABLED'] = False
+            return
+        
+        # Validate it's not a placeholder
+        if 'your-' in firebase_config or '...' in firebase_config:
+            logger.warning("Firebase config appears to be a placeholder - Firebase features disabled")
+            app.config['FIREBASE_ENABLED'] = False
+            return
+        
+        # Initialize Firebase
+        try:
+            firebase_app = init_firebase()
+            if firebase_app:
+                logger.info("Firebase Admin SDK initialized successfully")
+                app.config['FIREBASE_ENABLED'] = True
+            else:
+                logger.warning("Firebase Admin SDK initialization returned None")
+                app.config['FIREBASE_ENABLED'] = False
+                
+        except Exception as init_error:
+            logger.error(f"Firebase initialization error: {init_error}")
+            app.config['FIREBASE_ENABLED'] = False
+            
+    except ImportError as ie:
+        logger.error(f"Firebase module import error: {ie}")
+        app.config['FIREBASE_ENABLED'] = False
+    except Exception as e:
+        logger.error(f"Unexpected Firebase error: {e}")
+        app.config['FIREBASE_ENABLED'] = False
 
-def _register_blueprints(app: Flask) -> None:
-    from app.routes.auth import auth_bp
-    from app.routes.links import links_bp
-    from app.routes.redirect import redirect_bp
-    from app.routes.folders import folders_bp
-    from app.routes.tags import tags_bp
-    from app.routes.analytics import analytics_bp
-    from app.routes.sharing import sharing_bp
-    from app.routes.health import health_bp
-    from app.routes.bulk import bulk_bp
-    from app.routes.activity import activity_bp
-    from app.routes.templates import templates_bp
-    from app.routes.categories import categories_bp
-    from app.routes.search import search_bp
+def register_middleware(app):
+    """Register application middleware"""
+    
+    @app.before_request
+    def before_request():
+        """Handle preflight requests and logging"""
+        # Handle CORS preflight
+        if request.method == 'OPTIONS':
+            response = make_response()
+            response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
+            response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+            response.headers.add('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS,PATCH')
+            response.headers.add('Access-Control-Max-Age', '3600')
+            return response
+        
+        # Log requests in development
+        if app.config.get('FLASK_ENV') == 'development':
+            logger.debug(f"{request.method} {request.path} from {request.remote_addr}")
+    
+    @app.after_request
+    def after_request(response):
+        """Add security headers to all responses"""
+        # Security headers
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['X-XSS-Protection'] = '1; mode=block'
+        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        
+        # Only add HSTS in production with HTTPS
+        if app.config.get('FLASK_ENV') == 'production' and request.is_secure:
+            response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+        
+        # Add request ID for tracking (if available)
+        request_id = getattr(g, 'request_id', None)
+        if request_id:
+            response.headers['X-Request-ID'] = request_id
+        
+        return response
 
-    app.register_blueprint(auth_bp, url_prefix="/api/auth")
-    app.register_blueprint(links_bp, url_prefix="/api/links")
-    app.register_blueprint(folders_bp, url_prefix="/api/folders")
-    app.register_blueprint(tags_bp, url_prefix="/api/tags")
-    app.register_blueprint(analytics_bp, url_prefix="/api/analytics")
-    app.register_blueprint(sharing_bp, url_prefix="/api/share")
-    app.register_blueprint(health_bp, url_prefix="/api/health")
-    app.register_blueprint(bulk_bp, url_prefix="/api/bulk")
-    app.register_blueprint(activity_bp, url_prefix="/api/activity")
-    app.register_blueprint(templates_bp, url_prefix="/api/templates")
-    app.register_blueprint(categories_bp, url_prefix="/api/categories")
-    app.register_blueprint(search_bp, url_prefix="/api/search")
-    app.register_blueprint(redirect_bp)
+def register_blueprints(app):
+    """Register all application blueprints"""
+    # Auth blueprint
+    from .auth import auth_bp
+    app.register_blueprint(auth_bp, url_prefix='/auth')
+    logger.info("Auth blueprint registered at /auth")
+    
+    # Future blueprints can be added here
+    # from .links import links_bp
+    # app.register_blueprint(links_bp, url_prefix='/api/links')
+    # logger.info("Links blueprint registered at /api/links")
+    
+    # from .analytics import analytics_bp
+    # app.register_blueprint(analytics_bp, url_prefix='/api/analytics')
+    # logger.info("Analytics blueprint registered at /api/analytics")
 
-
-def _register_error_handlers(app: Flask) -> None:
+def register_error_handlers(app):
+    """Register error handlers for the application"""
+    
     @app.errorhandler(400)
-    def bad_request(e):
-        return ApiResponse.error("Invalid request", 400, "BAD_REQUEST")
-
+    def bad_request(error):
+        logger.warning(f"Bad request: {error}")
+        return jsonify({
+            'success': False,
+            'error': 'Bad request',
+            'message': str(error.description) if hasattr(error, 'description') else 'Invalid request'
+        }), 400
+    
     @app.errorhandler(401)
-    def unauthorized(e):
-        return ApiResponse.error("Authentication required", 401, "UNAUTHORIZED")
-
+    def unauthorized(error):
+        return jsonify({
+            'success': False,
+            'error': 'Unauthorized',
+            'message': 'Authentication required'
+        }), 401
+    
     @app.errorhandler(403)
-    def forbidden(e):
-        return ApiResponse.error("Access denied", 403, "FORBIDDEN")
-
+    def forbidden(error):
+        return jsonify({
+            'success': False,
+            'error': 'Forbidden',
+            'message': 'You do not have permission to access this resource'
+        }), 403
+    
     @app.errorhandler(404)
-    def not_found(e):
-        return ApiResponse.error("Resource not found", 404, "NOT_FOUND")
-
+    def not_found(error):
+        return jsonify({
+            'success': False,
+            'error': 'Not found',
+            'message': 'The requested resource was not found'
+        }), 404
+    
+    @app.errorhandler(405)
+    def method_not_allowed(error):
+        return jsonify({
+            'success': False,
+            'error': 'Method not allowed',
+            'message': f'The {request.method} method is not allowed for this endpoint'
+        }), 405
+    
     @app.errorhandler(429)
-    def rate_limited(e):
-        return ApiResponse.error(
-            "You're making requests too quickly. Please wait a moment.",
-            429,
-            "RATE_LIMITED"
-        )
-
+    def rate_limit_exceeded(error):
+        return jsonify({
+            'success': False,
+            'error': 'Too many requests',
+            'message': 'Rate limit exceeded. Please try again later'
+        }), 429
+    
     @app.errorhandler(500)
-    def internal_error(e):
-        logger.error(f"Internal error: {e}")
-        return ApiResponse.error("An unexpected error occurred", 500, "INTERNAL_ERROR")
-
+    def internal_error(error):
+        logger.error(f"Internal server error: {error}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error',
+            'message': 'An unexpected error occurred. Please try again later.'
+        }), 500
+    
+    @app.errorhandler(502)
+    def bad_gateway(error):
+        logger.error(f"Bad gateway error: {error}")
+        return jsonify({
+            'success': False,
+            'error': 'Bad gateway',
+            'message': 'Service temporarily unavailable'
+        }), 502
+    
     @app.errorhandler(503)
-    def service_unavailable(e):
-        return ApiResponse.error("Service temporarily unavailable", 503, "SERVICE_UNAVAILABLE")
+    def service_unavailable(error):
+        logger.error(f"Service unavailable: {error}")
+        return jsonify({
+            'success': False,
+            'error': 'Service unavailable',
+            'message': 'Service is temporarily unavailable. Please try again later.'
+        }), 503
+    
+    @app.errorhandler(Exception)
+    def unhandled_exception(error):
+        logger.error(f"Unhandled exception: {error}", exc_info=True)
+        
+        # Don't expose internal errors in production
+        if app.config.get('FLASK_ENV') == 'production':
+            return jsonify({
+                'success': False,
+                'error': 'Server error',
+                'message': 'An unexpected error occurred'
+            }), 500
+        else:
+            return jsonify({
+                'success': False,
+                'error': type(error).__name__,
+                'message': str(error)
+            }), 500
 
-
-def _setup_logging(app: Flask) -> None:
-    level = logging.DEBUG if app.config["DEBUG"] else logging.INFO
-
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
-
-    logging.getLogger("werkzeug").setLevel(logging.WARNING)
-    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
-
-
-def _setup_jwt_callbacks(app: Flask) -> None:
-    @jwt.token_in_blocklist_loader
-    def check_blocklist(jwt_header, jwt_payload):
+def register_root_endpoints(app):
+    """Register root-level endpoints"""
+    
+    @app.route('/')
+    def index():
+        """Root endpoint - API information"""
+        return jsonify({
+            'service': 'savlink-backend',
+            'version': '1.0.0',
+            'status': 'online',
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'environment': app.config.get('FLASK_ENV', 'production'),
+            'features': {
+                'firebase': app.config.get('FIREBASE_ENABLED', False),
+                'redis': redis_client is not None
+            },
+            'endpoints': {
+                'health': '/health',
+                'ready': '/ready',
+                'auth': {
+                    'base': '/auth',
+                    'current_user': 'GET /auth/me',
+                    'session': 'GET /auth/session',
+                    'emergency_request': 'POST /auth/emergency/request',
+                    'emergency_verify': 'POST /auth/emergency/verify'
+                }
+            },
+            'docs': 'https://docs.savlink.com'
+        })
+    
+    @app.route('/health')
+    def health_check():
+        """Health check endpoint for monitoring"""
+        health_status = {
+            'status': 'healthy',
+            'service': 'savlink-backend',
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'version': '1.0.0',
+            'checks': {}
+        }
+        
+        # Check database
         try:
-            from app.services.redis_service import RedisService
-            return RedisService().is_token_blacklisted(jwt_payload["jti"])
-        except Exception:
-            return False
-
-    @jwt.expired_token_loader
-    def expired_token(jwt_header, jwt_payload):
-        return ApiResponse.error("Your session has expired. Please sign in again.", 401, "TOKEN_EXPIRED")
-
-    @jwt.invalid_token_loader
-    def invalid_token(error):
-        return ApiResponse.error("Invalid authentication token", 401, "INVALID_TOKEN")
-
-    @jwt.unauthorized_loader
-    def missing_token(error):
-        return ApiResponse.error("Authentication required", 401, "MISSING_TOKEN")
-
-    @jwt.revoked_token_loader
-    def revoked_token(jwt_header, jwt_payload):
-        return ApiResponse.error("This session has been signed out", 401, "TOKEN_REVOKED")
-
-
-def _init_sentry(app: Flask) -> None:
-    sentry_dsn = app.config.get("SENTRY_DSN")
-    if sentry_dsn:
-        try:
-            import sentry_sdk
-            from sentry_sdk.integrations.flask import FlaskIntegration
-
-            sentry_sdk.init(
-                dsn=sentry_dsn,
-                integrations=[FlaskIntegration()],
-                traces_sample_rate=0.1,
-                environment=app.config.get("FLASK_ENV", "production")
-            )
-            logger.info("Sentry initialized")
-        except ImportError:
-            logger.warning("Sentry SDK not installed")
+            db.session.execute(text('SELECT 1'))
+            db.session.commit()
+            health_status['checks']['database'] = {
+                'status': 'healthy',
+                'response_time_ms': 0  # You could measure this
+            }
         except Exception as e:
-            logger.error(f"Sentry init failed: {e}")
+            logger.error(f"Database health check failed: {e}")
+            health_status['checks']['database'] = {
+                'status': 'unhealthy',
+                'error': str(e)
+            }
+            health_status['status'] = 'degraded'
+        
+        # Check Redis
+        if redis_client:
+            try:
+                start_time = datetime.utcnow()
+                redis_client.ping()
+                response_time = (datetime.utcnow() - start_time).total_seconds() * 1000
+                health_status['checks']['redis'] = {
+                    'status': 'healthy',
+                    'response_time_ms': round(response_time, 2)
+                }
+            except Exception as e:
+                logger.error(f"Redis health check failed: {e}")
+                health_status['checks']['redis'] = {
+                    'status': 'unhealthy',
+                    'error': str(e)
+                }
+                health_status['status'] = 'degraded'
+        else:
+            health_status['checks']['redis'] = {
+                'status': 'not_configured'
+            }
+        
+        # Check Firebase
+        health_status['checks']['firebase'] = {
+            'status': 'healthy' if app.config.get('FIREBASE_ENABLED') else 'not_configured'
+        }
+        
+        # Return appropriate status code
+        status_code = 200 if health_status['status'] == 'healthy' else 503
+        return jsonify(health_status), status_code
+    
+    @app.route('/ready')
+    def readiness_check():
+        """Readiness check for deployment platforms (K8s, etc)"""
+        try:
+            # Check critical dependencies
+            checks = {
+                'database': False,
+                'firebase': False
+            }
+            
+            # Database must be accessible
+            try:
+                db.session.execute(text('SELECT 1'))
+                db.session.commit()
+                checks['database'] = True
+            except Exception as e:
+                logger.error(f"Readiness check - database failed: {e}")
+            
+            # Firebase should be initialized (if configured)
+            if app.config.get('FIREBASE_CONFIG_JSON'):
+                checks['firebase'] = app.config.get('FIREBASE_ENABLED', False)
+            else:
+                checks['firebase'] = True  # Not required if not configured
+            
+            # All critical checks must pass
+            is_ready = all(checks.values())
+            
+            response = {
+                'ready': is_ready,
+                'service': 'savlink-backend',
+                'timestamp': datetime.utcnow().isoformat() + 'Z',
+                'checks': checks
+            }
+            
+            return jsonify(response), 200 if is_ready else 503
+            
+        except Exception as e:
+            logger.error(f"Readiness check failed: {e}", exc_info=True)
+            return jsonify({
+                'ready': False,
+                'service': 'savlink-backend',
+                'error': str(e)
+            }), 503
+    
+    @app.route('/ping')
+    def ping():
+        """Simple ping endpoint"""
+        return jsonify({
+            'pong': True,
+            'timestamp': datetime.utcnow().isoformat() + 'Z'
+        })
+
+# Import g for request context
+from flask import g
+import uuid
+
+# Add request ID middleware
+@app.before_request
+def assign_request_id():
+    """Assign a unique ID to each request for tracking"""
+    g.request_id = request.headers.get('X-Request-ID', str(uuid.uuid4()))
