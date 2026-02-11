@@ -8,7 +8,8 @@ from app.services.health_service import HealthService
 from app.services.metadata_service import MetadataService
 from app.services.link_service import LinkService
 from app.services.export_service import ExportService
-from app.services.firebase_auth import FirebaseAuthService
+from app.services.local_auth import LocalAuthService
+from app.services.supabase_auth import SupabaseAuthService  # Keep for backward compatibility
 
 __all__ = [
     "RedisService",
@@ -20,5 +21,6 @@ __all__ = [
     "MetadataService",
     "LinkService",
     "ExportService",
-    "FirebaseAuthService",
+    "LocalAuthService",
+    "SupabaseAuthService",
 ]

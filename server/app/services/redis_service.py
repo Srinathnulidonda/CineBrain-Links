@@ -63,6 +63,7 @@ class RedisService:
     def _key(self, *parts) -> str:
         return f"{KEY_PREFIX}:{':'.join(str(p) for p in parts)}"
 
+    # Link caching
     def cache_link(self, slug: str, data: dict, ttl: int = None) -> bool:
         if not self._available():
             return False
@@ -95,6 +96,7 @@ class RedisService:
         except Exception:
             return False
 
+    # Token blacklisting
     def blacklist_token(self, jti: str, ttl: int = None) -> bool:
         if not self._available():
             return False
@@ -115,6 +117,42 @@ class RedisService:
         except Exception:
             return False
 
+    # Email verification tokens
+    def store_verification_token(self, token: str, user_id: str, ttl: int = 86400) -> bool:
+        """Store email verification token"""
+        if not self._available():
+            logger.warning("Redis unavailable for verification token storage")
+            return False
+
+        try:
+            self.client.setex(self._key("verify", token), ttl, user_id)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to store verification token: {e}")
+            return False
+
+    def get_verification_token_user(self, token: str) -> Optional[str]:
+        """Get user ID from verification token"""
+        if not self._available():
+            return None
+
+        try:
+            return self.client.get(self._key("verify", token))
+        except Exception:
+            return None
+
+    def invalidate_verification_token(self, token: str) -> bool:
+        """Invalidate verification token"""
+        if not self._available():
+            return False
+
+        try:
+            self.client.delete(self._key("verify", token))
+            return True
+        except Exception:
+            return False
+
+    # Password reset tokens
     def store_reset_token(self, token: str, user_id: str, ttl: int = None) -> bool:
         if not self._available():
             logger.warning("Redis unavailable for reset token storage")
@@ -147,6 +185,7 @@ class RedisService:
         except Exception:
             return False
 
+    # User statistics caching
     def cache_user_stats(self, user_id: str, stats: dict, ttl: int = 300) -> bool:
         if not self._available():
             return False
@@ -181,6 +220,7 @@ class RedisService:
         except Exception:
             return False
 
+    # Click tracking
     def increment_click_counter(self, slug: str) -> int:
         if not self._available():
             return 0
@@ -209,6 +249,7 @@ class RedisService:
         except Exception:
             return {}
 
+    # Metadata caching
     def cache_metadata(self, url_hash: str, metadata: dict, ttl: int = 86400) -> bool:
         if not self._available():
             return False
@@ -233,6 +274,7 @@ class RedisService:
         except Exception:
             return None
 
+    # Health status caching
     def cache_health_status(self, link_id: str, status: dict, ttl: int = 3600) -> bool:
         if not self._available():
             return False
@@ -257,6 +299,7 @@ class RedisService:
         except Exception:
             return None
 
+    # Set operations
     def add_to_set(self, set_name: str, value: str) -> bool:
         if not self._available():
             return False
@@ -286,6 +329,7 @@ class RedisService:
         except Exception:
             return False
 
+    # Rate limiting
     def rate_limit_check(self, identifier: str, limit: int, window: int = 60) -> tuple:
         if not self._available():
             return True, limit
@@ -309,6 +353,45 @@ class RedisService:
         except Exception:
             return True, limit
 
+    # Failed login attempts tracking
+    def track_failed_login(self, identifier: str, window: int = 3600) -> int:
+        """Track failed login attempts by IP or email"""
+        if not self._available():
+            return 0
+
+        try:
+            key = self._key("failed_login", identifier)
+            count = self.client.incr(key)
+            self.client.expire(key, window)
+            return count
+        except Exception:
+            return 0
+
+    def get_failed_login_count(self, identifier: str) -> int:
+        """Get failed login attempt count"""
+        if not self._available():
+            return 0
+
+        try:
+            key = self._key("failed_login", identifier)
+            count = self.client.get(key)
+            return int(count) if count else 0
+        except Exception:
+            return 0
+
+    def clear_failed_logins(self, identifier: str) -> bool:
+        """Clear failed login attempts"""
+        if not self._available():
+            return False
+
+        try:
+            key = self._key("failed_login", identifier)
+            self.client.delete(key)
+            return True
+        except Exception:
+            return False
+
+    # Stats and monitoring
     def get_stats(self) -> dict:
         stats = {"available": self._available()}
 
@@ -317,7 +400,9 @@ class RedisService:
                 info = self.client.info("memory")
                 stats["memory_used"] = info.get("used_memory_human", "unknown")
                 stats["cached_links"] = len(self.client.keys(self._key("link", "*")))
-                stats["email_queue"] = self.client.llen(self._key("email_queue"))
+                stats["blacklisted_tokens"] = len(self.client.keys(self._key("blacklist", "*")))
+                stats["verification_tokens"] = len(self.client.keys(self._key("verify", "*")))
+                stats["reset_tokens"] = len(self.client.keys(self._key("reset", "*")))
             except Exception:
                 pass
 
@@ -328,12 +413,37 @@ class RedisService:
             return False
 
         try:
-            pattern = self._key("*", user_id, "*")
-            keys = self.client.keys(pattern)
-            if keys:
-                self.client.delete(*keys)
+            # Delete user-specific cache keys
+            patterns = [
+                self._key("stats", user_id),
+                self._key("*", user_id, "*")
+            ]
+            
+            for pattern in patterns:
+                keys = self.client.keys(pattern)
+                if keys:
+                    self.client.delete(*keys)
 
-            self.invalidate_user_stats(user_id)
             return True
         except Exception:
             return False
+
+    def cleanup_expired_keys(self) -> int:
+        """Cleanup expired keys (mainly for debugging)"""
+        if not self._available():
+            return 0
+
+        try:
+            # Get all our keys and check if they're expired
+            pattern = self._key("*")
+            keys = self.client.keys(pattern)
+            deleted = 0
+            
+            for key in keys:
+                ttl = self.client.ttl(key)
+                if ttl == -2:  # Key doesn't exist (expired and cleaned up)
+                    deleted += 1
+            
+            return deleted
+        except Exception:
+            return 0

@@ -6,8 +6,9 @@ from typing import Optional
 
 from flask import request, g, current_app
 
-from app.services.supabase_auth import SupabaseAuthService
+from app.models.user import User
 from app.services.redis_service import RedisService
+from app.utils.jwt_utils import JWTManager
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ def extract_token_from_header() -> Optional[str]:
 
 
 def require_auth(f):
-    """Decorator that requires valid Supabase JWT and provisions user"""
+    """Decorator that requires valid JWT and provisions user"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         # Extract token
@@ -40,28 +41,9 @@ def require_auth(f):
                 "MISSING_TOKEN"
             )
         
-        # Check if token is blacklisted
-        try:
-            redis = RedisService()
-            # Extract JTI or use token prefix for blacklist check
-            import jwt as pyjwt
-            try:
-                unverified_payload = pyjwt.decode(token, options={"verify_signature": False})
-                jti = unverified_payload.get("jti") or token[:50]
-            except:
-                jti = token[:50]
-            
-            if redis.is_token_blacklisted(jti):
-                return current_app.api_response.error(
-                    "This session has been signed out", 
-                    401, 
-                    "TOKEN_REVOKED"
-                )
-        except Exception as e:
-            logger.debug(f"Blacklist check failed: {e}")
-        
-        # Verify Supabase JWT
-        payload = SupabaseAuthService.verify_token(token)
+        # Verify JWT token
+        jwt_manager = JWTManager()
+        payload = jwt_manager.verify_access_token(token)
         
         if not payload:
             return current_app.api_response.error(
@@ -70,15 +52,35 @@ def require_auth(f):
                 "INVALID_TOKEN"
             )
         
-        # Get or create user
-        user, error = SupabaseAuthService.get_or_create_user(payload)
-        
-        if not user:
-            logger.error(f"User provisioning failed: {error}")
+        # Get user ID from payload
+        user_id = payload.get("sub")
+        if not user_id:
             return current_app.api_response.error(
-                "Authentication failed", 
-                500, 
-                "AUTH_ERROR"
+                "Invalid token: missing user ID", 
+                401, 
+                "INVALID_TOKEN"
+            )
+        
+        # Check if user tokens have been invalidated
+        try:
+            redis = RedisService()
+            if redis.is_in_set("invalidated_users", user_id):
+                return current_app.api_response.error(
+                    "Session expired. Please log in again.", 
+                    401, 
+                    "SESSION_EXPIRED"
+                )
+        except Exception:
+            # If Redis is unavailable, continue without this check
+            pass
+        
+        # Get user from database
+        user = User.query.get(user_id)
+        if not user:
+            return current_app.api_response.error(
+                "User not found", 
+                401, 
+                "USER_NOT_FOUND"
             )
         
         # Check if user is active
@@ -113,28 +115,32 @@ def optional_auth(f):
         
         if token:
             try:
-                # Check blacklist
-                redis = RedisService()
-                import jwt as pyjwt
-                try:
-                    unverified_payload = pyjwt.decode(token, options={"verify_signature": False})
-                    jti = unverified_payload.get("jti") or token[:50]
-                except:
-                    jti = token[:50]
+                # Verify token
+                jwt_manager = JWTManager()
+                payload = jwt_manager.verify_access_token(token)
                 
-                if not redis.is_token_blacklisted(jti):
-                    # Verify token
-                    payload = SupabaseAuthService.verify_token(token)
-                    
-                    if payload:
-                        # Get user
-                        user, _ = SupabaseAuthService.get_or_create_user(payload)
-                        
-                        if user and user.is_active:
-                            g.current_user = user
-                            g.current_user_id = user.id
-                            g.token_payload = payload
-                            g.token = token
+                if payload:
+                    user_id = payload.get("sub")
+                    if user_id:
+                        # Check if tokens invalidated
+                        try:
+                            redis = RedisService()
+                            if not redis.is_in_set("invalidated_users", user_id):
+                                # Get user
+                                user = User.query.get(user_id)
+                                if user and user.is_active:
+                                    g.current_user = user
+                                    g.current_user_id = user.id
+                                    g.token_payload = payload
+                                    g.token = token
+                        except Exception:
+                            # Get user without Redis check
+                            user = User.query.get(user_id)
+                            if user and user.is_active:
+                                g.current_user = user
+                                g.current_user_id = user.id
+                                g.token_payload = payload
+                                g.token = token
             except Exception as e:
                 logger.debug(f"Optional auth failed: {e}")
         
@@ -159,7 +165,7 @@ def admin_required(f):
         user = g.current_user
         
         # You can implement admin check based on your needs
-        # For example, check a field in user model or a specific claim in JWT
+        # For example, check a field in user model or email domain
         # For now, we'll use email domain as example
         
         if not user.email.endswith("@savlink.app"):  # Adjust this logic
@@ -172,3 +178,73 @@ def admin_required(f):
         return f(*args, **kwargs)
     
     return decorated_function
+
+
+def rate_limit_by_user(f):
+    """Decorator that applies rate limiting per authenticated user"""
+    @wraps(f)
+    @require_auth
+    def decorated_function(*args, **kwargs):
+        try:
+            redis = RedisService()
+            user_id = g.current_user_id
+            
+            # Check rate limit (10 requests per minute per user)
+            allowed, remaining = redis.rate_limit_check(
+                f"user_rate_limit:{user_id}", 
+                limit=10, 
+                window=60
+            )
+            
+            if not allowed:
+                return current_app.api_response.error(
+                    "Rate limit exceeded. Please slow down.",
+                    429,
+                    "RATE_LIMITED"
+                )
+            
+            # Add rate limit headers
+            from flask import make_response
+            response = make_response(f(*args, **kwargs))
+            response.headers["X-RateLimit-Remaining"] = str(remaining)
+            return response
+            
+        except Exception:
+            # If Redis is unavailable, continue without rate limiting
+            return f(*args, **kwargs)
+    
+    return decorated_function
+
+
+def require_email_verification(f):
+    """Decorator that requires verified email"""
+    @wraps(f)
+    @require_auth
+    def decorated_function(*args, **kwargs):
+        user = g.current_user
+        
+        if not user.email_verified:
+            return current_app.api_response.error(
+                "Email verification required", 
+                403, 
+                "EMAIL_NOT_VERIFIED"
+            )
+        
+        return f(*args, **kwargs)
+    
+    return decorated_function
+
+
+def get_current_user() -> Optional[User]:
+    """Get current authenticated user from request context"""
+    return getattr(g, 'current_user', None)
+
+
+def get_current_user_id() -> Optional[str]:
+    """Get current authenticated user ID from request context"""
+    return getattr(g, 'current_user_id', None)
+
+
+def is_authenticated() -> bool:
+    """Check if current request is authenticated"""
+    return get_current_user() is not None

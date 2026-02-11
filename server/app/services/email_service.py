@@ -84,6 +84,67 @@ Get started: {{ dashboard_url }}
         """
     },
     
+    "email_verification": {
+        "subject": "Verify your Savlink email address",
+        "html": """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5; }
+        .container { max-width: 560px; margin: 40px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .header { background: #1a1a2e; color: #fff; padding: 32px; text-align: center; }
+        .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+        .content { padding: 32px; }
+        .content h2 { margin: 0 0 16px; font-size: 20px; color: #1a1a2e; }
+        .content p { margin: 0 0 16px; color: #555; }
+        .button { display: inline-block; background: #1a1a2e; color: #fff !important; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 16px; }
+        .notice { background: #e7f3ff; border-left: 3px solid #1a1a2e; padding: 12px 16px; margin: 24px 0; font-size: 14px; color: #1a1a2e; }
+        .footer { text-align: center; padding: 24px; color: #888; font-size: 13px; border-top: 1px solid #eee; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Savlink</h1>
+        </div>
+        <div class="content">
+            <h2>Verify your email address</h2>
+            <p>Hi {{ user_name }},</p>
+            <p>Welcome to Savlink! To complete your registration and secure your account, please verify your email address by clicking the button below:</p>
+            <p style="text-align: center; margin: 32px 0;">
+                <a href="{{ verification_url }}" class="button">Verify Email Address</a>
+            </p>
+            <div class="notice">
+                This verification link will expire in 24 hours for security reasons.
+            </div>
+            <p style="font-size: 14px; color: #666;">If you didn't create an account with Savlink, you can safely ignore this email.</p>
+        </div>
+        <div class="footer">
+            <p>© {{ year }} Savlink</p>
+        </div>
+    </div>
+</body>
+</html>
+        """,
+        "text": """Verify your Savlink email address
+
+Hi {{ user_name }},
+
+Welcome to Savlink! To complete your registration and secure your account, please verify your email address by visiting this link:
+
+{{ verification_url }}
+
+This verification link will expire in 24 hours for security reasons.
+
+If you didn't create an account with Savlink, you can safely ignore this email.
+
+- Savlink
+        """
+    },
+    
     "password_reset": {
         "subject": "Reset your Savlink password",
         "html": """
@@ -746,6 +807,9 @@ class BrevoEmailService:
             if email_data.get('reset_token'):
                 reset_url = f"{self.frontend_url}/reset-password?token={email_data['reset_token']}"
                 logger.info(f"Password reset link: {reset_url}")
+            elif email_data.get('verification_token'):
+                verify_url = f"{self.frontend_url}/verify-email?token={email_data['verification_token']}"
+                logger.info(f"Email verification link: {verify_url}")
             return
             
         email_data['failed_at'] = datetime.utcnow().isoformat()
@@ -777,6 +841,7 @@ class BrevoEmailService:
         text: str = "",
         priority: str = 'normal',
         reset_token: str = None,
+        verification_token: str = None,
         to_name: str = ""
     ) -> bool:
         email_id = str(uuid.uuid4())
@@ -793,6 +858,7 @@ class BrevoEmailService:
             'text': text,
             'timestamp': datetime.utcnow().isoformat(),
             'reset_token': reset_token,
+            'verification_token': verification_token,
             'environment': self.environment
         }
 
@@ -802,6 +868,10 @@ class BrevoEmailService:
             if reset_token:
                 reset_url = f"{self.frontend_url}/reset-password?token={reset_token}"
                 logger.info(f"Password reset link for {to}: {reset_url}")
+            
+            if verification_token:
+                verify_url = f"{self.frontend_url}/verify-email?token={verification_token}"
+                logger.info(f"Email verification link for {to}: {verify_url}")
             
             return True
 
@@ -855,6 +925,54 @@ class BrevoEmailService:
                 
         except Exception as e:
             logger.error(f"Failed to send welcome email: {e}")
+            return False
+
+    def send_email_verification(
+        self,
+        to_email: str,
+        verification_token: str,
+        user_name: str = None,
+        async_send: bool = True
+    ) -> bool:
+        """Send email verification email"""
+        try:
+            if not user_name:
+                user_name = to_email.split('@')[0].replace('.', ' ').title()
+            
+            verification_url = f"{self.frontend_url}/verify-email?token={verification_token}"
+            
+            context = {
+                "user_name": user_name,
+                "verification_url": verification_url
+            }
+            
+            subject, html_content, text_content = self._render_template("email_verification", context)
+            
+            if async_send:
+                return self.queue_email(
+                    to=to_email,
+                    subject=subject,
+                    html=html_content,
+                    text=text_content,
+                    priority='high',
+                    verification_token=verification_token,
+                    to_name=user_name
+                )
+            else:
+                email_data = {
+                    'id': str(uuid.uuid4()),
+                    'to': to_email,
+                    'to_name': user_name,
+                    'subject': subject,
+                    'html': html_content,
+                    'text': text_content,
+                    'verification_token': verification_token,
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+                return self._send_email(email_data)
+                
+        except Exception as e:
+            logger.error(f"Failed to send verification email: {e}")
             return False
 
     def send_password_reset_email(
@@ -1127,6 +1245,54 @@ class BrevoEmailService:
         except Exception as e:
             stats['error'] = str(e)
             return stats
+
+    def get_fallback_emails(self, limit: int = 10) -> list:
+        """Get emails that failed to send (for manual retry)"""
+        if not self.redis_client:
+            return []
+        
+        try:
+            fallback_keys = self.redis_client.lrange('savlink:email_fallback_queue', 0, limit - 1)
+            emails = []
+            
+            for key in fallback_keys:
+                email_data = self.redis_client.get(key)
+                if email_data:
+                    emails.append(json.loads(email_data))
+            
+            return emails
+        except Exception as e:
+            logger.error(f"Failed to get fallback emails: {e}")
+            return []
+
+    def retry_failed_emails(self, max_retry: int = 5) -> int:
+        """Retry failed emails from fallback queue"""
+        if not self.redis_client or not self.email_enabled:
+            return 0
+        
+        retried = 0
+        try:
+            for _ in range(max_retry):
+                key = self.redis_client.lpop('savlink:email_fallback_queue')
+                if not key:
+                    break
+                
+                email_data = self.redis_client.get(key)
+                if email_data:
+                    email_dict = json.loads(email_data)
+                    if self._send_email(email_dict):
+                        retried += 1
+                        self.redis_client.delete(key)
+                    else:
+                        # Put back in queue
+                        self.redis_client.rpush('savlink:email_fallback_queue', key)
+                        break
+            
+            logger.info(f"Retried {retried} failed emails")
+            return retried
+        except Exception as e:
+            logger.error(f"Email retry failed: {e}")
+            return retried
 
 
 _email_service_instance = None
