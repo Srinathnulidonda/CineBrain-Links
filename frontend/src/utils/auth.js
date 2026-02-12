@@ -27,29 +27,104 @@ googleProvider.setCustomParameters({
     prompt: 'select_account'
 })
 
-// Configure axios with longer timeout
+// Production API configuration
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
 axios.defaults.baseURL = API_BASE_URL
-axios.defaults.timeout = 15000 // Increase to 15 seconds
+axios.defaults.timeout = 30000 // 30 seconds for production
 
-// Add response interceptor for better error handling
+// Retry configuration
+const MAX_RETRIES = 2
+const RETRY_DELAY = 1000
+
+// Add request interceptor for retry logic
+axios.interceptors.request.use(
+    config => {
+        config.metadata = { startTime: new Date() }
+        return config
+    },
+    error => Promise.reject(error)
+)
+
+// Add response interceptor for retry and telemetry
 axios.interceptors.response.use(
-    response => response,
-    error => {
-        // Log detailed error info in development
+    response => {
+        const duration = new Date() - response.config.metadata.startTime
+        if (duration > 10000) {
+            console.warn(`Slow API call: ${response.config.url} took ${duration}ms`)
+        }
+        return response
+    },
+    async error => {
+        const config = error.config
+
+        // Log detailed error in development
         if (import.meta.env.DEV) {
             console.error('API Error:', {
-                url: error.config?.url,
-                method: error.config?.method,
+                url: config?.url,
+                method: config?.method,
                 status: error.response?.status,
                 data: error.response?.data,
                 message: error.message,
-                code: error.code
+                code: error.code,
+                duration: config?.metadata ? new Date() - config.metadata.startTime : null
             })
         }
+
+        // Retry logic for timeout and network errors
+        if (!config || !config.retry) {
+            config.retry = 0
+        }
+
+        const shouldRetry =
+            config.retry < MAX_RETRIES &&
+            !error.response && // Network or timeout error
+            (error.code === 'ECONNABORTED' || error.code === 'NETWORK_ERROR')
+
+        if (shouldRetry) {
+            config.retry++
+            console.log(`Retrying request (${config.retry}/${MAX_RETRIES}): ${config.url}`)
+
+            // Exponential backoff
+            await new Promise(resolve =>
+                setTimeout(resolve, RETRY_DELAY * Math.pow(2, config.retry - 1))
+            )
+
+            return axios(config)
+        }
+
         return Promise.reject(error)
     }
 )
+
+// Keep backend warm in production
+let warmupInterval = null
+const startWarmup = () => {
+    if (warmupInterval) return
+
+    const warmup = async () => {
+        try {
+            await fetch(`${API_BASE_URL}/ping`, {
+                method: 'GET',
+                mode: 'cors'
+            })
+        } catch (e) {
+            // Silent fail
+        }
+    }
+
+    // Initial warmup after 5 seconds
+    setTimeout(warmup, 5000)
+
+    // Keep warm every 4 minutes
+    warmupInterval = setInterval(warmup, 4 * 60 * 1000)
+}
+
+const stopWarmup = () => {
+    if (warmupInterval) {
+        clearInterval(warmupInterval)
+        warmupInterval = null
+    }
+}
 
 // Auth state management
 let currentUser = null
@@ -74,10 +149,7 @@ const initializeAuth = async () => {
                     console.log('🔄 Redirect sign-in completed')
                     await handleSuccessfulAuth(result.user)
 
-                    // Clear any redirect flags
                     sessionStorage.removeItem('auth_redirect_pending')
-
-                    // Trigger navigation in the app
                     window.dispatchEvent(new CustomEvent('auth-redirect-success', {
                         detail: { user: currentUser }
                     }))
@@ -91,6 +163,12 @@ const initializeAuth = async () => {
             }
 
             authInitialized = true
+
+            // Start warmup in production
+            if (import.meta.env.PROD) {
+                startWarmup()
+            }
+
             resolve(true)
         } catch (error) {
             console.error('❌ Auth initialization error:', error)
@@ -105,85 +183,87 @@ const initializeAuth = async () => {
 // Initialize on import
 initializeAuth()
 
-// Helper function to handle successful authentication
+// Production-grade auth handler
 async function handleSuccessfulAuth(firebaseUser) {
     if (!firebaseUser) return null
 
     try {
         const token = await firebaseUser.getIdToken()
-
-        // Configure axios with token
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
 
-        // Attempt to sync with backend with longer timeout for auth
-        try {
-            console.log('🔄 Syncing with backend...')
+        // Set Firebase data immediately for instant UI update
+        currentUser = {
+            id: firebaseUser.uid,
+            email: firebaseUser.email,
+            name: firebaseUser.displayName,
+            avatar_url: firebaseUser.photoURL,
+            email_verified: firebaseUser.emailVerified,
+            auth_provider: firebaseUser.providerData[0]?.providerId || 'password',
+            created_at: firebaseUser.metadata.creationTime,
+            last_login_at: firebaseUser.metadata.lastSignInTime,
+            firebaseUser,
+            _syncedWithBackend: false,
+            _syncPending: true
+        }
 
-            const response = await axios.get('/auth/me', {
-                timeout: 10000, // 10 seconds for auth requests
-                validateStatus: (status) => status < 500 // Don't throw on 4xx errors
-            })
+        // Notify listeners immediately
+        authStateListeners.forEach(listener => listener(currentUser))
 
-            if (response.status === 200 && response.data.success) {
-                currentUser = {
-                    ...response.data.data,
-                    firebaseUser,
-                    _syncedWithBackend: true
+        // Attempt backend sync with retry
+        let syncAttempts = 0
+        let syncSuccess = false
+
+        while (syncAttempts < 2 && !syncSuccess) {
+            try {
+                console.log(`🔄 Syncing with backend (attempt ${syncAttempts + 1})...`)
+
+                const response = await axios.get('/auth/me', {
+                    timeout: 15000, // 15 seconds per attempt
+                    validateStatus: (status) => status < 500
+                })
+
+                if (response.status === 200 && response.data.success) {
+                    currentUser = {
+                        ...response.data.data,
+                        firebaseUser,
+                        _syncedWithBackend: true,
+                        _syncPending: false
+                    }
+
+                    console.log('✅ User synced with backend successfully')
+                    syncSuccess = true
+
+                    // Notify listeners with synced data
+                    authStateListeners.forEach(listener => listener(currentUser))
+                } else {
+                    throw new Error(response.data?.error || 'Backend sync failed')
                 }
+            } catch (backendError) {
+                syncAttempts++
 
-                console.log('✅ User synced with backend successfully')
-            } else {
-                // Backend returned error but not 5xx
-                throw new Error(response.data?.error || 'Backend sync failed')
-            }
-        } catch (backendError) {
-            // More specific error handling
-            const errorDetails = {
-                message: backendError.message,
-                status: backendError.response?.status,
-                data: backendError.response?.data,
-                url: backendError.config?.url,
-                code: backendError.code,
-                timestamp: new Date().toISOString()
-            }
+                if (syncAttempts < 2) {
+                    // Wait before retry
+                    await new Promise(resolve => setTimeout(resolve, 1000))
+                } else {
+                    // Final attempt failed
+                    console.warn('⚠️ Backend sync failed after retries, using Firebase data')
 
-            if (backendError.code === 'ECONNABORTED') {
-                console.warn('⏰ Backend sync timeout - using Firebase data as fallback')
-            } else if (backendError.response?.status >= 500) {
-                console.error('🔥 Backend server error:', errorDetails)
-            } else if (backendError.response?.status >= 400) {
-                console.warn('⚠️ Backend client error:', errorDetails)
-            } else if (backendError.code === 'NETWORK_ERROR') {
-                console.warn('🌐 Network error - using Firebase data as fallback')
-            } else {
-                console.warn('⚠️ Backend sync failed:', errorDetails)
-            }
+                    currentUser._syncedWithBackend = false
+                    currentUser._syncPending = false
+                    currentUser._syncError = {
+                        message: backendError.message,
+                        timestamp: new Date().toISOString()
+                    }
 
-            // Use Firebase data as fallback
-            currentUser = {
-                id: firebaseUser.uid,
-                email: firebaseUser.email,
-                name: firebaseUser.displayName,
-                avatar_url: firebaseUser.photoURL,
-                email_verified: firebaseUser.emailVerified,
-                auth_provider: firebaseUser.providerData[0]?.providerId || 'password',
-                created_at: firebaseUser.metadata.creationTime,
-                last_login_at: firebaseUser.metadata.lastSignInTime,
-                emergency_enabled: false, // Default value
-                firebaseUser,
-                // Metadata about sync status
-                _syncedWithBackend: false,
-                _syncError: errorDetails,
-                _fallback: true
+                    // Notify listeners that sync failed
+                    authStateListeners.forEach(listener => listener(currentUser))
+                }
             }
-
-            console.info('📱 Continuing with Firebase data (backend will sync on next request)')
         }
 
         return currentUser
     } catch (error) {
         console.error('❌ Error handling auth:', error)
-        // Clear any partial auth state
         currentUser = null
         delete axios.defaults.headers.common['Authorization']
         throw error
@@ -192,7 +272,7 @@ async function handleSuccessfulAuth(firebaseUser) {
 
 // Listen to auth state changes
 onAuthStateChanged(auth, async (firebaseUser) => {
-    if (!authInitialized) return // Wait for initialization
+    if (!authInitialized) return
 
     if (firebaseUser) {
         try {
@@ -204,13 +284,13 @@ onAuthStateChanged(auth, async (firebaseUser) => {
     } else {
         currentUser = null
         delete axios.defaults.headers.common['Authorization']
+        stopWarmup()
     }
 
-    // Notify listeners
     authStateListeners.forEach(listener => listener(currentUser))
 })
 
-// Refresh token periodically
+// Refresh token periodically with retry
 let tokenRefreshInterval = null
 const startTokenRefresh = () => {
     stopTokenRefresh()
@@ -221,20 +301,32 @@ const startTokenRefresh = () => {
                 const token = await auth.currentUser.getIdToken(true)
                 axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
 
-                // Try to sync with backend again if previous sync failed
+                // Try to sync with backend if previous sync failed
                 if (currentUser && !currentUser._syncedWithBackend) {
                     console.log('🔄 Retrying backend sync...')
                     try {
-                        await handleSuccessfulAuth(auth.currentUser)
+                        const response = await axios.get('/auth/me', {
+                            timeout: 10000
+                        })
+
+                        if (response.status === 200 && response.data.success) {
+                            currentUser = {
+                                ...response.data.data,
+                                firebaseUser: auth.currentUser,
+                                _syncedWithBackend: true
+                            }
+                            console.log('✅ Backend sync successful on retry')
+                            authStateListeners.forEach(listener => listener(currentUser))
+                        }
                     } catch (error) {
-                        console.log('⚠️ Backend sync retry failed, will try again later')
+                        console.log('⚠️ Backend sync retry failed')
                     }
                 }
             } catch (error) {
                 console.error('❌ Token refresh failed:', error)
             }
         }
-    }, 55 * 60 * 1000) // Refresh every 55 minutes
+    }, 50 * 60 * 1000) // Refresh every 50 minutes
 }
 
 const stopTokenRefresh = () => {
@@ -248,8 +340,12 @@ const stopTokenRefresh = () => {
 onAuthStateChanged(auth, (user) => {
     if (user) {
         startTokenRefresh()
+        if (import.meta.env.PROD) {
+            startWarmup()
+        }
     } else {
         stopTokenRefresh()
+        stopWarmup()
     }
 })
 
@@ -423,6 +519,7 @@ export const AuthService = {
 
             // Stop token refresh
             stopTokenRefresh()
+            stopWarmup()
 
             currentUser = null
 
