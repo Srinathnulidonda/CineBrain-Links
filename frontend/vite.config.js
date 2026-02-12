@@ -7,9 +7,16 @@ export default defineConfig({
   server: {
     port: 5173,
     headers: {
-      // Fix COOP issues with Google OAuth
-      "Cross-Origin-Opener-Policy": "same-origin-allow-popups",
-      "Cross-Origin-Embedder-Policy": "unsafe-none"
+      // Fix COOP issues for development
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+      'Cross-Origin-Embedder-Policy': 'unsafe-none'
+    }
+  },
+  preview: {
+    headers: {
+      // Fix COOP issues for preview
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+      'Cross-Origin-Embedder-Policy': 'unsafe-none'
     }
   }
 })

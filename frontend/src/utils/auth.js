@@ -1,4 +1,4 @@
-// src/utils/auth.js
+// src/utils/auth.js - COMPLETE FIXED VERSION
 import {
     getAuth,
     signInWithEmailAndPassword,
@@ -30,13 +30,13 @@ googleProvider.setCustomParameters({
 // Production API configuration
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
 axios.defaults.baseURL = API_BASE_URL
-axios.defaults.timeout = 30000 // 30 seconds for production
+axios.defaults.timeout = 30000
 
 // Retry configuration
-const MAX_RETRIES = 2
+const MAX_RETRIES = 3
 const RETRY_DELAY = 1000
 
-// Add request interceptor for retry logic
+// Request interceptor
 axios.interceptors.request.use(
     config => {
         config.metadata = { startTime: new Date() }
@@ -45,7 +45,7 @@ axios.interceptors.request.use(
     error => Promise.reject(error)
 )
 
-// Add response interceptor for retry and telemetry
+// Response interceptor with enhanced retry logic
 axios.interceptors.response.use(
     response => {
         const duration = new Date() - response.config.metadata.startTime
@@ -57,28 +57,16 @@ axios.interceptors.response.use(
     async error => {
         const config = error.config
 
-        // Log detailed error in development
-        if (import.meta.env.DEV) {
-            console.error('API Error:', {
-                url: config?.url,
-                method: config?.method,
-                status: error.response?.status,
-                data: error.response?.data,
-                message: error.message,
-                code: error.code,
-                duration: config?.metadata ? new Date() - config.metadata.startTime : null
-            })
-        }
-
-        // Retry logic for timeout and network errors
         if (!config || !config.retry) {
             config.retry = 0
         }
 
+        // Retry on timeout or network errors
         const shouldRetry =
             config.retry < MAX_RETRIES &&
-            !error.response && // Network or timeout error
-            (error.code === 'ECONNABORTED' || error.code === 'NETWORK_ERROR')
+            (error.code === 'ECONNABORTED' ||
+                error.code === 'NETWORK_ERROR' ||
+                error.message.includes('timeout'))
 
         if (shouldRetry) {
             config.retry++
@@ -89,6 +77,9 @@ axios.interceptors.response.use(
                 setTimeout(resolve, RETRY_DELAY * Math.pow(2, config.retry - 1))
             )
 
+            // Increase timeout for retries
+            config.timeout = config.timeout * 1.5
+
             return axios(config)
         }
 
@@ -96,27 +87,43 @@ axios.interceptors.response.use(
     }
 )
 
-// Keep backend warm in production
+// Enhanced warmup for cold starts
 let warmupInterval = null
+let isWarmedUp = false
+
 const startWarmup = () => {
     if (warmupInterval) return
 
     const warmup = async () => {
         try {
-            await fetch(`${API_BASE_URL}/ping`, {
+            const controller = new AbortController()
+            const timeoutId = setTimeout(() => controller.abort(), 3000)
+
+            const response = await fetch(`${API_BASE_URL}/health`, {
                 method: 'GET',
-                mode: 'cors'
+                mode: 'cors',
+                signal: controller.signal
             })
+
+            clearTimeout(timeoutId)
+
+            if (response.ok) {
+                isWarmedUp = true
+                console.log('✅ Backend warmed up')
+            }
         } catch (e) {
             // Silent fail
         }
     }
 
-    // Initial warmup after 5 seconds
-    setTimeout(warmup, 5000)
+    // Aggressive initial warmup
+    warmup() // Immediate
+    setTimeout(warmup, 2000)  // 2 seconds
+    setTimeout(warmup, 5000)  // 5 seconds
+    setTimeout(warmup, 10000) // 10 seconds
 
-    // Keep warm every 4 minutes
-    warmupInterval = setInterval(warmup, 4 * 60 * 1000)
+    // Regular keepalive
+    warmupInterval = setInterval(warmup, 2 * 60 * 1000) // Every 2 minutes
 }
 
 const stopWarmup = () => {
@@ -132,46 +139,81 @@ let authStateListeners = []
 let authInitialized = false
 let authInitPromise = null
 
-// Initialize auth persistence
+// Check storage availability
+const checkStorage = (storage) => {
+    try {
+        const test = '__test__'
+        storage.setItem(test, test)
+        storage.removeItem(test)
+        return true
+    } catch (e) {
+        return false
+    }
+}
+
+const hasSessionStorage = checkStorage(sessionStorage)
+const hasLocalStorage = checkStorage(localStorage)
+
+// Initialize auth with storage fallback
 const initializeAuth = async () => {
     if (authInitPromise) return authInitPromise
 
     authInitPromise = new Promise(async (resolve) => {
         try {
-            // Set persistence based on remember me
-            const rememberMe = localStorage.getItem('rememberMe') === 'true'
-            await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence)
+            // Determine persistence strategy
+            let persistence = browserLocalPersistence // Default to local
 
-            // Check for redirect result
+            if (hasLocalStorage && hasSessionStorage) {
+                const rememberMe = localStorage.getItem('rememberMe') === 'true'
+                persistence = rememberMe ? browserLocalPersistence : browserSessionPersistence
+            }
+
+            await setPersistence(auth, persistence)
+
+            // Handle redirect result with enhanced error handling
             try {
                 const result = await getRedirectResult(auth)
                 if (result?.user) {
                     console.log('🔄 Redirect sign-in completed')
                     await handleSuccessfulAuth(result.user)
 
-                    sessionStorage.removeItem('auth_redirect_pending')
+                    if (hasSessionStorage) {
+                        sessionStorage.removeItem('auth_redirect_pending')
+                    }
+
                     window.dispatchEvent(new CustomEvent('auth-redirect-success', {
                         detail: { user: currentUser }
                     }))
                 }
             } catch (redirectError) {
-                console.error('❌ Redirect error:', redirectError)
-                sessionStorage.removeItem('auth_redirect_pending')
-                window.dispatchEvent(new CustomEvent('auth-redirect-error', {
-                    detail: { error: redirectError }
-                }))
+                if (redirectError.code === 'auth/missing-initial-state' ||
+                    redirectError.code === 'auth/web-storage-unsupported') {
+                    console.warn('⚠️ Storage issue detected, checking current auth state')
+
+                    // Wait a bit for auth to settle
+                    await new Promise(resolve => setTimeout(resolve, 1000))
+
+                    if (auth.currentUser) {
+                        await handleSuccessfulAuth(auth.currentUser)
+                    }
+                } else {
+                    console.error('Redirect error:', redirectError)
+                    if (hasSessionStorage) {
+                        sessionStorage.removeItem('auth_redirect_pending')
+                    }
+                }
             }
 
             authInitialized = true
 
-            // Start warmup in production
+            // Start warmup
             if (import.meta.env.PROD) {
                 startWarmup()
             }
 
             resolve(true)
         } catch (error) {
-            console.error('❌ Auth initialization error:', error)
+            console.error('Auth initialization error:', error)
             authInitialized = true
             resolve(false)
         }
@@ -180,10 +222,10 @@ const initializeAuth = async () => {
     return authInitPromise
 }
 
-// Initialize on import
+// Initialize immediately
 initializeAuth()
 
-// Production-grade auth handler
+// Enhanced auth handler with progressive timeouts
 async function handleSuccessfulAuth(firebaseUser) {
     if (!firebaseUser) return null
 
@@ -191,7 +233,7 @@ async function handleSuccessfulAuth(firebaseUser) {
         const token = await firebaseUser.getIdToken()
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
 
-        // Set Firebase data immediately for instant UI update
+        // Set Firebase data immediately for UI
         currentUser = {
             id: firebaseUser.uid,
             email: firebaseUser.email,
@@ -209,16 +251,33 @@ async function handleSuccessfulAuth(firebaseUser) {
         // Notify listeners immediately
         authStateListeners.forEach(listener => listener(currentUser))
 
-        // Attempt backend sync with retry
-        let syncAttempts = 0
-        let syncSuccess = false
-
-        while (syncAttempts < 2 && !syncSuccess) {
+        // Warm up backend if cold
+        if (!isWarmedUp && import.meta.env.PROD) {
+            console.log('⏳ Warming up backend...')
             try {
-                console.log(`🔄 Syncing with backend (attempt ${syncAttempts + 1})...`)
+                await axios.get('/health', {
+                    timeout: 5000,
+                    validateStatus: () => true
+                })
+                isWarmedUp = true
+            } catch (e) {
+                console.log('⚠️ Backend is cold, will retry...')
+            }
+        }
+
+        // Backend sync with progressive timeout
+        let syncSuccess = false
+        const maxAttempts = 3
+        const baseTimeout = isWarmedUp ? 10000 : 20000
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                console.log(`🔄 Syncing with backend (attempt ${attempt}/${maxAttempts})...`)
+
+                const timeout = baseTimeout + (attempt - 1) * 10000
 
                 const response = await axios.get('/auth/me', {
-                    timeout: 15000, // 15 seconds per attempt
+                    timeout,
                     validateStatus: (status) => status < 500
                 })
 
@@ -230,40 +289,39 @@ async function handleSuccessfulAuth(firebaseUser) {
                         _syncPending: false
                     }
 
-                    console.log('✅ User synced with backend successfully')
+                    console.log('✅ Backend sync successful')
                     syncSuccess = true
+                    isWarmedUp = true
 
                     // Notify listeners with synced data
                     authStateListeners.forEach(listener => listener(currentUser))
-                } else {
-                    throw new Error(response.data?.error || 'Backend sync failed')
+                    break
                 }
-            } catch (backendError) {
-                syncAttempts++
+            } catch (syncError) {
+                console.warn(`Sync attempt ${attempt} failed:`, syncError.message)
 
-                if (syncAttempts < 2) {
-                    // Wait before retry
-                    await new Promise(resolve => setTimeout(resolve, 1000))
-                } else {
-                    // Final attempt failed
-                    console.warn('⚠️ Backend sync failed after retries, using Firebase data')
-
-                    currentUser._syncedWithBackend = false
-                    currentUser._syncPending = false
-                    currentUser._syncError = {
-                        message: backendError.message,
-                        timestamp: new Date().toISOString()
-                    }
-
-                    // Notify listeners that sync failed
-                    authStateListeners.forEach(listener => listener(currentUser))
+                if (attempt < maxAttempts) {
+                    // Wait before retry with exponential backoff
+                    await new Promise(resolve =>
+                        setTimeout(resolve, Math.min(1000 * Math.pow(2, attempt), 5000))
+                    )
                 }
             }
         }
 
+        if (!syncSuccess) {
+            console.warn('⚠️ Using Firebase data only (backend sync failed)')
+            currentUser._syncedWithBackend = false
+            currentUser._syncPending = false
+            currentUser._syncError = 'Backend sync failed after retries'
+
+            // Still notify listeners
+            authStateListeners.forEach(listener => listener(currentUser))
+        }
+
         return currentUser
     } catch (error) {
-        console.error('❌ Error handling auth:', error)
+        console.error('❌ Auth handler error:', error)
         currentUser = null
         delete axios.defaults.headers.common['Authorization']
         throw error
@@ -278,7 +336,7 @@ onAuthStateChanged(auth, async (firebaseUser) => {
         try {
             await handleSuccessfulAuth(firebaseUser)
         } catch (error) {
-            console.error('❌ Auth state change error:', error)
+            console.error('Auth state change error:', error)
             currentUser = null
         }
     } else {
@@ -290,7 +348,7 @@ onAuthStateChanged(auth, async (firebaseUser) => {
     authStateListeners.forEach(listener => listener(currentUser))
 })
 
-// Refresh token periodically with retry
+// Token refresh with retry
 let tokenRefreshInterval = null
 const startTokenRefresh = () => {
     stopTokenRefresh()
@@ -301,32 +359,27 @@ const startTokenRefresh = () => {
                 const token = await auth.currentUser.getIdToken(true)
                 axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
 
-                // Try to sync with backend if previous sync failed
+                // Retry backend sync if needed
                 if (currentUser && !currentUser._syncedWithBackend) {
-                    console.log('🔄 Retrying backend sync...')
                     try {
-                        const response = await axios.get('/auth/me', {
-                            timeout: 10000
-                        })
-
-                        if (response.status === 200 && response.data.success) {
+                        const response = await axios.get('/auth/me', { timeout: 15000 })
+                        if (response.data.success) {
                             currentUser = {
                                 ...response.data.data,
                                 firebaseUser: auth.currentUser,
                                 _syncedWithBackend: true
                             }
-                            console.log('✅ Backend sync successful on retry')
                             authStateListeners.forEach(listener => listener(currentUser))
                         }
-                    } catch (error) {
-                        console.log('⚠️ Backend sync retry failed')
+                    } catch (e) {
+                        // Silent fail
                     }
                 }
             } catch (error) {
-                console.error('❌ Token refresh failed:', error)
+                console.error('Token refresh failed:', error)
             }
         }
-    }, 50 * 60 * 1000) // Refresh every 50 minutes
+    }, 45 * 60 * 1000) // 45 minutes
 }
 
 const stopTokenRefresh = () => {
@@ -336,7 +389,7 @@ const stopTokenRefresh = () => {
     }
 }
 
-// Start token refresh when user is logged in
+// Auto-start token refresh
 onAuthStateChanged(auth, (user) => {
     if (user) {
         startTokenRefresh()
@@ -350,7 +403,6 @@ onAuthStateChanged(auth, (user) => {
 })
 
 export const AuthService = {
-    // Ensure auth is initialized
     async ensureInitialized() {
         if (!authInitialized) {
             await initializeAuth()
@@ -358,7 +410,6 @@ export const AuthService = {
         return authInitialized
     },
 
-    // Register with email/password
     async register({ email, password, name }) {
         try {
             await this.ensureInitialized()
@@ -370,7 +421,6 @@ export const AuthService = {
                 await updateProfile(user, { displayName: name })
             }
 
-            // Send verification email
             await sendEmailVerification(user, {
                 url: `${window.location.origin}/login?email=${encodeURIComponent(email)}`
             })
@@ -385,7 +435,7 @@ export const AuthService = {
                 }
             }
         } catch (error) {
-            console.error('❌ Registration error:', error)
+            console.error('Registration error:', error)
             return {
                 success: false,
                 error: {
@@ -396,19 +446,17 @@ export const AuthService = {
         }
     },
 
-    // Login with email/password
     async login({ email, password, rememberMe = false }) {
         try {
             await this.ensureInitialized()
 
-            // Set persistence based on remember me
-            await setPersistence(
-                auth,
-                rememberMe ? browserLocalPersistence : browserSessionPersistence
-            )
+            // Set persistence
+            const persistence = rememberMe ? browserLocalPersistence : browserSessionPersistence
+            await setPersistence(auth, persistence)
 
-            // Store remember me preference
-            localStorage.setItem('rememberMe', rememberMe.toString())
+            if (hasLocalStorage) {
+                localStorage.setItem('rememberMe', rememberMe.toString())
+            }
 
             const userCredential = await signInWithEmailAndPassword(auth, email, password)
             const userData = await handleSuccessfulAuth(userCredential.user)
@@ -422,7 +470,7 @@ export const AuthService = {
                 message: 'Welcome back!'
             }
         } catch (error) {
-            console.error('❌ Login error:', error)
+            console.error('Login error:', error)
             return {
                 success: false,
                 error: {
@@ -433,21 +481,32 @@ export const AuthService = {
         }
     },
 
-    // Login with Google - Production grade with fallbacks
-    async loginWithGoogle(preferRedirect = false) {
+    async loginWithGoogle(forceRedirect = false) {
         try {
             await this.ensureInitialized()
 
-            // Detect if we should use redirect
+            // Always use redirect on mobile or if storage is problematic
             const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+            const hasStorageIssues = !hasSessionStorage || !hasLocalStorage
             const isIframe = window !== window.parent
-            const shouldUseRedirect = preferRedirect || isMobile || isIframe
+
+            // Check for COOP issues
+            let hasCOOPIssues = false
+            try {
+                hasCOOPIssues = window.crossOriginIsolated === true
+            } catch (e) {
+                // Can't detect, assume false
+            }
+
+            const shouldUseRedirect = forceRedirect || isMobile || hasStorageIssues ||
+                isIframe || hasCOOPIssues
 
             if (shouldUseRedirect) {
-                // Use redirect flow
-                sessionStorage.setItem('auth_redirect_pending', 'true')
+                console.log('Using redirect flow for Google sign-in')
+                if (hasSessionStorage) {
+                    sessionStorage.setItem('auth_redirect_pending', 'true')
+                }
                 await signInWithRedirect(auth, googleProvider)
-
                 return {
                     success: true,
                     pending: true,
@@ -455,7 +514,7 @@ export const AuthService = {
                 }
             }
 
-            // Try popup flow
+            // Try popup
             try {
                 const userCredential = await signInWithPopup(auth, googleProvider)
                 const userData = await handleSuccessfulAuth(userCredential.user)
@@ -469,30 +528,27 @@ export const AuthService = {
                     message: 'Welcome!'
                 }
             } catch (popupError) {
-                // If popup fails, try redirect as fallback
-                if (
-                    popupError.code === 'auth/popup-blocked' ||
-                    popupError.code === 'auth/popup-closed-by-user' ||
-                    popupError.code === 'auth/cancelled-popup-request'
-                ) {
-                    console.log('🔄 Popup blocked/closed, falling back to redirect')
+                // Fallback to redirect if popup fails
+                if (popupError.code === 'auth/popup-blocked' ||
+                    popupError.code === 'auth/cancelled-popup-request' ||
+                    popupError.code === 'auth/popup-closed-by-user') {
+
+                    if (popupError.code === 'auth/popup-closed-by-user') {
+                        return { success: false, cancelled: true }
+                    }
+
+                    console.log('Popup failed, using redirect')
                     return this.loginWithGoogle(true)
                 }
 
                 throw popupError
             }
         } catch (error) {
-            console.error('❌ Google login error:', error)
+            console.error('Google login error:', error)
 
-            // Don't treat user cancellation as an error
-            if (
-                error.code === 'auth/popup-closed-by-user' ||
-                error.code === 'auth/cancelled-popup-request'
-            ) {
-                return {
-                    success: false,
-                    cancelled: true
-                }
+            if (error.code === 'auth/popup-closed-by-user' ||
+                error.code === 'auth/cancelled-popup-request') {
+                return { success: false, cancelled: true }
             }
 
             return {
@@ -505,27 +561,25 @@ export const AuthService = {
         }
     },
 
-    // Logout
     async logout() {
         try {
             await signOut(auth)
-
-            // Clear auth headers
             delete axios.defaults.headers.common['Authorization']
 
-            // Clear storage
-            localStorage.removeItem('rememberMe')
-            sessionStorage.clear()
+            if (hasLocalStorage) {
+                localStorage.removeItem('rememberMe')
+            }
+            if (hasSessionStorage) {
+                sessionStorage.clear()
+            }
 
-            // Stop token refresh
             stopTokenRefresh()
             stopWarmup()
-
             currentUser = null
 
             return { success: true }
         } catch (error) {
-            console.error('❌ Logout error:', error)
+            console.error('Logout error:', error)
             return {
                 success: false,
                 error: { message: 'Failed to sign out' }
@@ -533,22 +587,18 @@ export const AuthService = {
         }
     },
 
-    // Password reset
     async resetPassword(email) {
         try {
-            const actionCodeSettings = {
+            await sendPasswordResetEmail(auth, email, {
                 url: `${window.location.origin}/login`,
                 handleCodeInApp: false
-            }
-
-            await sendPasswordResetEmail(auth, email, actionCodeSettings)
+            })
 
             return {
                 success: true,
-                message: 'Password reset email sent. Please check your inbox.'
+                message: 'Password reset email sent.'
             }
         } catch (error) {
-            console.error('❌ Password reset error:', error)
             return {
                 success: false,
                 error: {
@@ -559,27 +609,20 @@ export const AuthService = {
         }
     },
 
-    // Resend verification email
     async resendVerificationEmail() {
         try {
             const user = auth.currentUser
-            if (!user) {
-                throw new Error('No user logged in')
-            }
+            if (!user) throw new Error('No user logged in')
 
-            const actionCodeSettings = {
-                url: `${window.location.origin}/login?email=${encodeURIComponent(user.email)}`,
-                handleCodeInApp: false
-            }
-
-            await sendEmailVerification(user, actionCodeSettings)
+            await sendEmailVerification(user, {
+                url: `${window.location.origin}/login?email=${encodeURIComponent(user.email)}`
+            })
 
             return {
                 success: true,
                 message: 'Verification email sent'
             }
         } catch (error) {
-            console.error('❌ Resend verification error:', error)
             return {
                 success: false,
                 error: { message: 'Failed to send verification email' }
@@ -587,39 +630,32 @@ export const AuthService = {
         }
     },
 
-    // Get current user
     getCurrentUser() {
         return currentUser
     },
 
-    // Get Firebase user
     getFirebaseUser() {
         return auth.currentUser
     },
 
-    // Check if authenticated
     isAuthenticated() {
         return !!auth.currentUser
     },
 
-    // Check if backend is synced
     isBackendSynced() {
         return currentUser?._syncedWithBackend || false
     },
 
-    // Get sync status
     getSyncStatus() {
         if (!currentUser) return { synced: false, reason: 'not_authenticated' }
 
         return {
             synced: currentUser._syncedWithBackend || false,
-            fallback: currentUser._fallback || false,
-            error: currentUser._syncError || null,
-            lastSyncAttempt: currentUser._syncError?.timestamp || null
+            pending: currentUser._syncPending || false,
+            error: currentUser._syncError || null
         }
     },
 
-    // Get ID token
     async getIdToken(forceRefresh = false) {
         try {
             if (auth.currentUser) {
@@ -627,34 +663,28 @@ export const AuthService = {
             }
             return null
         } catch (error) {
-            console.error('❌ Get ID token error:', error)
+            console.error('Get ID token error:', error)
             return null
         }
     },
 
-    // Subscribe to auth state changes
     onAuthStateChange(callback) {
         authStateListeners.push(callback)
-
-        // Call immediately with current state
         callback(currentUser)
 
-        // Return unsubscribe function
         return () => {
             authStateListeners = authStateListeners.filter(listener => listener !== callback)
         }
     },
 
-    // Manually retry backend sync
     async retryBackendSync() {
         if (auth.currentUser) {
             try {
-                console.log('🔄 Manual backend sync retry...')
+                console.log('Manual backend sync retry...')
                 await handleSuccessfulAuth(auth.currentUser)
                 return {
                     success: true,
-                    synced: currentUser?._syncedWithBackend || false,
-                    user: currentUser
+                    synced: currentUser?._syncedWithBackend || false
                 }
             } catch (error) {
                 return { success: false, error: error.message }
@@ -663,30 +693,28 @@ export const AuthService = {
         return { success: false, error: 'No authenticated user' }
     },
 
-    // Error message mapping
     getErrorMessage(code) {
         const errorMessages = {
-            'auth/email-already-in-use': 'This email is already registered. Please login instead.',
+            'auth/email-already-in-use': 'This email is already registered.',
             'auth/invalid-email': 'Please enter a valid email address.',
-            'auth/operation-not-allowed': 'This operation is not allowed. Please contact support.',
-            'auth/weak-password': 'Password should be at least 6 characters long.',
-            'auth/user-disabled': 'This account has been disabled. Please contact support.',
-            'auth/user-not-found': 'No account found with this email. Please register first.',
-            'auth/wrong-password': 'Incorrect password. Please try again.',
-            'auth/invalid-credential': 'Invalid email or password. Please try again.',
-            'auth/too-many-requests': 'Too many failed attempts. Please try again later.',
-            'auth/network-request-failed': 'Network error. Please check your internet connection.',
+            'auth/operation-not-allowed': 'This operation is not allowed.',
+            'auth/weak-password': 'Password should be at least 6 characters.',
+            'auth/user-disabled': 'This account has been disabled.',
+            'auth/user-not-found': 'No account found with this email.',
+            'auth/wrong-password': 'Incorrect password.',
+            'auth/invalid-credential': 'Invalid email or password.',
+            'auth/too-many-requests': 'Too many failed attempts. Try again later.',
+            'auth/network-request-failed': 'Network error. Check your connection.',
             'auth/popup-closed-by-user': 'Sign-in was cancelled.',
-            'auth/cancelled-popup-request': 'Another sign-in is already in progress.',
-            'auth/account-exists-with-different-credential': 'An account already exists with this email using a different sign-in method.',
-            'auth/popup-blocked': 'Sign-in popup was blocked by your browser. Please allow popups or try again.',
-            'auth/requires-recent-login': 'This operation requires recent authentication. Please login again.',
-            'auth/email-not-verified': 'Please verify your email before continuing.'
+            'auth/cancelled-popup-request': 'Another sign-in in progress.',
+            'auth/account-exists-with-different-credential': 'Account exists with different sign-in method.',
+            'auth/popup-blocked': 'Sign-in popup blocked. Please allow popups.',
+            'auth/requires-recent-login': 'Please login again.',
+            'auth/missing-initial-state': 'Session storage issue detected. Please try again.'
         }
 
-        return errorMessages[code] || 'An unexpected error occurred. Please try again.'
+        return errorMessages[code] || 'An error occurred. Please try again.'
     }
 }
 
-// Export auth instance for direct use if needed
 export { auth }
