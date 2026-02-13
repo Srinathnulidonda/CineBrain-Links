@@ -1,4 +1,4 @@
-// src/utils/auth.js - COMPLETE FIXED VERSION
+// src/utils/auth.js - PRODUCTION GRADE FIX
 import {
     getAuth,
     signInWithEmailAndPassword,
@@ -14,7 +14,8 @@ import {
     onAuthStateChanged,
     setPersistence,
     browserLocalPersistence,
-    browserSessionPersistence
+    browserSessionPersistence,
+    inMemoryPersistence
 } from 'firebase/auth'
 import { app } from '../config/firebase'
 import axios from 'axios'
@@ -35,6 +36,13 @@ axios.defaults.timeout = 30000
 // Retry configuration
 const MAX_RETRIES = 3
 const RETRY_DELAY = 1000
+
+// Storage keys
+const STORAGE_KEYS = {
+    PERSISTENCE_TYPE: 'savlink_auth_persistence',
+    USER_PREFERENCE: 'savlink_remember_preference',
+    AUTH_TIMESTAMP: 'savlink_auth_timestamp'
+}
 
 // Request interceptor
 axios.interceptors.request.use(
@@ -66,7 +74,8 @@ axios.interceptors.response.use(
             config.retry < MAX_RETRIES &&
             (error.code === 'ECONNABORTED' ||
                 error.code === 'NETWORK_ERROR' ||
-                error.message.includes('timeout'))
+                error.message.includes('timeout') ||
+                (error.response && error.response.status >= 500))
 
         if (shouldRetry) {
             config.retry++
@@ -139,13 +148,14 @@ let authStateListeners = []
 let authInitialized = false
 let authInitPromise = null
 
-// Check storage availability
+// Enhanced storage availability check
 const checkStorage = (storage) => {
     try {
-        const test = '__test__'
-        storage.setItem(test, test)
+        const test = '__storage_test__'
+        storage.setItem(test, 'test')
+        const value = storage.getItem(test)
         storage.removeItem(test)
-        return true
+        return value === 'test'
     } catch (e) {
         return false
     }
@@ -154,21 +164,110 @@ const checkStorage = (storage) => {
 const hasSessionStorage = checkStorage(sessionStorage)
 const hasLocalStorage = checkStorage(localStorage)
 
-// Initialize auth with storage fallback
+// Get safe storage with fallback
+const safeStorage = {
+    setItem: (key, value) => {
+        try {
+            if (hasLocalStorage) {
+                localStorage.setItem(key, value)
+                return true
+            }
+        } catch (e) {
+            console.warn('Failed to set localStorage:', e)
+        }
+        return false
+    },
+    getItem: (key) => {
+        try {
+            if (hasLocalStorage) {
+                return localStorage.getItem(key)
+            }
+        } catch (e) {
+            console.warn('Failed to get localStorage:', e)
+        }
+        return null
+    },
+    removeItem: (key) => {
+        try {
+            if (hasLocalStorage) {
+                localStorage.removeItem(key)
+                return true
+            }
+        } catch (e) {
+            console.warn('Failed to remove from localStorage:', e)
+        }
+        return false
+    }
+}
+
+// Determine the best persistence strategy
+const getBestPersistence = () => {
+    // Check user preference first
+    const userPreference = safeStorage.getItem(STORAGE_KEYS.USER_PREFERENCE)
+
+    // If user explicitly chose "Don't remember me", respect that
+    if (userPreference === 'session') {
+        return browserSessionPersistence
+    }
+
+    // Default to local persistence for better UX
+    // This ensures users stay logged in across browser restarts
+    if (hasLocalStorage) {
+        return browserLocalPersistence
+    }
+
+    // Fallback to session if localStorage is not available
+    if (hasSessionStorage) {
+        console.warn('localStorage not available, falling back to session persistence')
+        return browserSessionPersistence
+    }
+
+    // Last resort: in-memory persistence
+    console.warn('No storage available, using in-memory persistence')
+    return inMemoryPersistence
+}
+
+// Initialize auth with robust persistence handling
 const initializeAuth = async () => {
     if (authInitPromise) return authInitPromise
 
     authInitPromise = new Promise(async (resolve) => {
         try {
-            // Determine persistence strategy
-            let persistence = browserLocalPersistence // Default to local
+            console.log('🔐 Initializing authentication...')
 
-            if (hasLocalStorage && hasSessionStorage) {
-                const rememberMe = localStorage.getItem('rememberMe') === 'true'
-                persistence = rememberMe ? browserLocalPersistence : browserSessionPersistence
+            // Set persistence with fallback chain
+            const persistence = getBestPersistence()
+
+            try {
+                await setPersistence(auth, persistence)
+                console.log(`✅ Auth persistence set to: ${persistence.type}`)
+
+                // Store the persistence type for debugging
+                safeStorage.setItem(STORAGE_KEYS.PERSISTENCE_TYPE, persistence.type)
+            } catch (persistenceError) {
+                console.error('Failed to set persistence, using fallback:', persistenceError)
+
+                // Try fallback persistence options
+                const fallbacks = [browserSessionPersistence, inMemoryPersistence]
+                for (const fallback of fallbacks) {
+                    try {
+                        await setPersistence(auth, fallback)
+                        console.log(`✅ Fallback persistence set to: ${fallback.type}`)
+                        safeStorage.setItem(STORAGE_KEYS.PERSISTENCE_TYPE, fallback.type)
+                        break
+                    } catch (e) {
+                        continue
+                    }
+                }
             }
 
-            await setPersistence(auth, persistence)
+            // Wait for auth state to be restored
+            await new Promise((resolve) => {
+                const unsubscribe = onAuthStateChanged(auth, (user) => {
+                    unsubscribe()
+                    resolve(user)
+                })
+            })
 
             // Handle redirect result with enhanced error handling
             try {
@@ -188,32 +287,35 @@ const initializeAuth = async () => {
             } catch (redirectError) {
                 if (redirectError.code === 'auth/missing-initial-state' ||
                     redirectError.code === 'auth/web-storage-unsupported') {
-                    console.warn('⚠️ Storage issue detected, checking current auth state')
+                    console.warn('⚠️ Redirect state issue, checking current auth')
 
-                    // Wait a bit for auth to settle
-                    await new Promise(resolve => setTimeout(resolve, 1000))
+                    // Give Firebase more time to restore auth state
+                    await new Promise(resolve => setTimeout(resolve, 2000))
 
                     if (auth.currentUser) {
+                        console.log('✅ Found authenticated user after delay')
                         await handleSuccessfulAuth(auth.currentUser)
                     }
-                } else {
+                } else if (redirectError.code !== 'auth/no-auth-event') {
                     console.error('Redirect error:', redirectError)
-                    if (hasSessionStorage) {
-                        sessionStorage.removeItem('auth_redirect_pending')
-                    }
+                }
+
+                if (hasSessionStorage) {
+                    sessionStorage.removeItem('auth_redirect_pending')
                 }
             }
 
             authInitialized = true
+            console.log('✅ Auth initialization complete')
 
-            // Start warmup
+            // Start warmup in production
             if (import.meta.env.PROD) {
                 startWarmup()
             }
 
             resolve(true)
         } catch (error) {
-            console.error('Auth initialization error:', error)
+            console.error('❌ Auth initialization error:', error)
             authInitialized = true
             resolve(false)
         }
@@ -232,6 +334,9 @@ async function handleSuccessfulAuth(firebaseUser) {
     try {
         const token = await firebaseUser.getIdToken()
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
+
+        // Store auth timestamp
+        safeStorage.setItem(STORAGE_KEYS.AUTH_TIMESTAMP, new Date().toISOString())
 
         // Set Firebase data immediately for UI
         currentUser = {
@@ -328,9 +433,15 @@ async function handleSuccessfulAuth(firebaseUser) {
     }
 }
 
-// Listen to auth state changes
+// Robust auth state listener
 onAuthStateChanged(auth, async (firebaseUser) => {
-    if (!authInitialized) return
+    // Skip if auth not initialized to prevent race conditions
+    if (!authInitialized) {
+        console.log('⏳ Auth state changed but initialization pending...')
+        return
+    }
+
+    console.log('🔄 Auth state changed:', firebaseUser ? 'User logged in' : 'User logged out')
 
     if (firebaseUser) {
         try {
@@ -343,6 +454,9 @@ onAuthStateChanged(auth, async (firebaseUser) => {
         currentUser = null
         delete axios.defaults.headers.common['Authorization']
         stopWarmup()
+
+        // Clear auth timestamp
+        safeStorage.removeItem(STORAGE_KEYS.AUTH_TIMESTAMP)
     }
 
     authStateListeners.forEach(listener => listener(currentUser))
@@ -358,6 +472,7 @@ const startTokenRefresh = () => {
             try {
                 const token = await auth.currentUser.getIdToken(true)
                 axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
+                console.log('🔄 Token refreshed')
 
                 // Retry backend sync if needed
                 if (currentUser && !currentUser._syncedWithBackend) {
@@ -377,6 +492,17 @@ const startTokenRefresh = () => {
                 }
             } catch (error) {
                 console.error('Token refresh failed:', error)
+
+                // If token refresh fails, try to re-authenticate
+                if (error.code === 'auth/user-token-expired') {
+                    try {
+                        await auth.currentUser.reload()
+                        const newToken = await auth.currentUser.getIdToken(true)
+                        axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`
+                    } catch (reloadError) {
+                        console.error('Failed to reload user:', reloadError)
+                    }
+                }
             }
         }
     }, 45 * 60 * 1000) // 45 minutes
@@ -421,6 +547,10 @@ export const AuthService = {
                 await updateProfile(user, { displayName: name })
             }
 
+            // Always use local persistence for new registrations
+            await setPersistence(auth, browserLocalPersistence)
+            safeStorage.setItem(STORAGE_KEYS.USER_PREFERENCE, 'local')
+
             await sendEmailVerification(user, {
                 url: `${window.location.origin}/login?email=${encodeURIComponent(email)}`
             })
@@ -446,16 +576,18 @@ export const AuthService = {
         }
     },
 
-    async login({ email, password, rememberMe = false }) {
+    async login({ email, password, rememberMe = true }) {
         try {
             await this.ensureInitialized()
 
-            // Set persistence
+            // Set persistence based on user choice
             const persistence = rememberMe ? browserLocalPersistence : browserSessionPersistence
-            await setPersistence(auth, persistence)
 
-            if (hasLocalStorage) {
-                localStorage.setItem('rememberMe', rememberMe.toString())
+            try {
+                await setPersistence(auth, persistence)
+                safeStorage.setItem(STORAGE_KEYS.USER_PREFERENCE, rememberMe ? 'local' : 'session')
+            } catch (persistError) {
+                console.warn('Failed to set persistence, continuing with current setting:', persistError)
             }
 
             const userCredential = await signInWithEmailAndPassword(auth, email, password)
@@ -485,10 +617,19 @@ export const AuthService = {
         try {
             await this.ensureInitialized()
 
-            // Always use redirect on mobile or if storage is problematic
+            // Always set local persistence for social logins
+            try {
+                await setPersistence(auth, browserLocalPersistence)
+                safeStorage.setItem(STORAGE_KEYS.USER_PREFERENCE, 'local')
+            } catch (e) {
+                console.warn('Failed to set persistence for Google login')
+            }
+
+            // Detect if we should use redirect
             const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
             const hasStorageIssues = !hasSessionStorage || !hasLocalStorage
             const isIframe = window !== window.parent
+            const isPrivateBrowsing = !hasLocalStorage && hasSessionStorage
 
             // Check for COOP issues
             let hasCOOPIssues = false
@@ -499,7 +640,7 @@ export const AuthService = {
             }
 
             const shouldUseRedirect = forceRedirect || isMobile || hasStorageIssues ||
-                isIframe || hasCOOPIssues
+                isIframe || hasCOOPIssues || isPrivateBrowsing
 
             if (shouldUseRedirect) {
                 console.log('Using redirect flow for Google sign-in')
@@ -566,9 +707,11 @@ export const AuthService = {
             await signOut(auth)
             delete axios.defaults.headers.common['Authorization']
 
-            if (hasLocalStorage) {
-                localStorage.removeItem('rememberMe')
-            }
+            // Clear stored preferences
+            safeStorage.removeItem(STORAGE_KEYS.USER_PREFERENCE)
+            safeStorage.removeItem(STORAGE_KEYS.AUTH_TIMESTAMP)
+            safeStorage.removeItem(STORAGE_KEYS.PERSISTENCE_TYPE)
+
             if (hasSessionStorage) {
                 sessionStorage.clear()
             }
@@ -670,7 +813,11 @@ export const AuthService = {
 
     onAuthStateChange(callback) {
         authStateListeners.push(callback)
-        callback(currentUser)
+
+        // If already initialized, call immediately with current state
+        if (authInitialized) {
+            callback(currentUser)
+        }
 
         return () => {
             authStateListeners = authStateListeners.filter(listener => listener !== callback)
@@ -693,6 +840,25 @@ export const AuthService = {
         return { success: false, error: 'No authenticated user' }
     },
 
+    // Debug methods for production issues
+    async debugAuthState() {
+        const debugInfo = {
+            initialized: authInitialized,
+            hasCurrentUser: !!currentUser,
+            hasFirebaseUser: !!auth.currentUser,
+            persistenceType: safeStorage.getItem(STORAGE_KEYS.PERSISTENCE_TYPE),
+            userPreference: safeStorage.getItem(STORAGE_KEYS.USER_PREFERENCE),
+            lastAuthTime: safeStorage.getItem(STORAGE_KEYS.AUTH_TIMESTAMP),
+            storageAvailable: {
+                local: hasLocalStorage,
+                session: hasSessionStorage
+            }
+        }
+
+        console.log('🔍 Auth Debug Info:', debugInfo)
+        return debugInfo
+    },
+
     getErrorMessage(code) {
         const errorMessages = {
             'auth/email-already-in-use': 'This email is already registered.',
@@ -710,10 +876,20 @@ export const AuthService = {
             'auth/account-exists-with-different-credential': 'Account exists with different sign-in method.',
             'auth/popup-blocked': 'Sign-in popup blocked. Please allow popups.',
             'auth/requires-recent-login': 'Please login again.',
-            'auth/missing-initial-state': 'Session storage issue detected. Please try again.'
+            'auth/missing-initial-state': 'Session storage issue detected. Please try again.',
+            'auth/user-token-expired': 'Your session has expired. Please login again.'
         }
 
         return errorMessages[code] || 'An error occurred. Please try again.'
+    }
+}
+
+// Export for debugging in production
+if (typeof window !== 'undefined') {
+    window.SavlinkAuth = {
+        debugAuthState: AuthService.debugAuthState,
+        getCurrentUser: AuthService.getCurrentUser,
+        getFirebaseUser: AuthService.getFirebaseUser
     }
 }
 

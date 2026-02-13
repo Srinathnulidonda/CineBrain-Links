@@ -14,7 +14,7 @@ export default function Login() {
     const [checkingAuth, setCheckingAuth] = useState(true)
     const [error, setError] = useState('')
     const [showPassword, setShowPassword] = useState(false)
-    const [rememberMe, setRememberMe] = useState(false)
+    const [rememberMe, setRememberMe] = useState(true)
 
     const navigate = useNavigate()
     const location = useLocation()
