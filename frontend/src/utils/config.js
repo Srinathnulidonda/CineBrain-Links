@@ -1,12 +1,15 @@
 // src/utils/config.js
-
 // Determine if we're in development or production
 const isDevelopment = import.meta.env.DEV || process.env.NODE_ENV === 'development'
 
 // API Configuration
 export const config = {
     // API Base URL - uses environment variable or defaults
-    apiBaseUrl: import.meta.env.VITE_API_BASE_URL,
+    apiBaseUrl: import.meta.env.VITE_API_URL || (
+        isDevelopment
+            ? 'http://localhost:5000'
+            : 'https://savlinks-test-g445.onrender.com'
+    ),
 
     // App Configuration
     appName: 'Savlink',
@@ -14,7 +17,7 @@ export const config = {
 
     // Feature flags
     features: {
-        googleAuth: false, // Set to true when Google OAuth is implemented
+        googleAuth: true, // Enable Google OAuth
         emailVerification: true,
         passwordReset: true,
         rememberMe: true,
@@ -42,7 +45,7 @@ export const config = {
             resetPassword: '/api/auth/reset-password',
             changePassword: '/api/auth/change-password',
             deleteAccount: '/api/auth/delete-account',
-            profile: '/api/auth/me',
+            profile: '/auth/me', // This matches backend
         },
         links: {
             base: '/api/links',
@@ -51,6 +54,10 @@ export const config = {
             search: '/api/links/search',
             analytics: '/api/analytics',
         },
+        dashboard: {
+            links: '/api/dashboard/links',
+            stats: '/api/dashboard/stats'
+        }
     },
 
     // UI Configuration
