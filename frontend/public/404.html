@@ -3,9 +3,10 @@
 
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Redirecting... | Savlink</title>
     <script>
-        // Enhanced SPA redirect handler
+        // Enhanced SPA redirect handler with mobile optimization
         (function () {
             var path = window.location.pathname;
             var search = window.location.search;
@@ -17,19 +18,26 @@
                 path.startsWith('/r/') ||
                 path.includes('.')) {
                 // Show actual 404 for these
-                document.body.innerHTML = '<h1>404 - Not Found</h1><p>The requested resource could not be found.</p>';
+                document.body.innerHTML = '<div style="text-align: center; margin-top: 50px; font-family: system-ui;"><h1>404 - Not Found</h1><p>The requested resource could not be found.</p></div>';
                 return;
             }
 
             // Redirect SPA routes to index with path in search params
             var redirect = '/?redirect=' + encodeURIComponent(path + search + hash);
+
+            // Add mobile detection for better handling
+            var isMobile = /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            if (isMobile) {
+                redirect += '&mobile=1';
+            }
+
             window.location.replace(redirect);
         })();
     </script>
 </head>
 
 <body>
-    <div style="text-align: center; margin-top: 50px;">
+    <div style="text-align: center; margin-top: 50px; font-family: system-ui;">
         <h2>Redirecting...</h2>
         <p>If you're not redirected automatically, <a href="/">click here</a>.</p>
     </div>

@@ -1,4 +1,3 @@
-// src/pages/auth/Login.jsx
 import { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -53,7 +52,17 @@ export default function Login() {
                 if (pendingRedirect) {
                     // Show loading state while redirect completes
                     setLoading(true)
-                    return
+
+                    // Check timestamp to avoid infinite loading
+                    const timestamp = sessionStorage.getItem('auth_redirect_timestamp')
+                    if (timestamp && Date.now() - parseInt(timestamp) > 60000) {
+                        // Clear stale redirect state after 1 minute
+                        sessionStorage.removeItem('auth_redirect_pending')
+                        sessionStorage.removeItem('auth_redirect_timestamp')
+                        setLoading(false)
+                    } else {
+                        return
+                    }
                 }
 
                 if (AuthService.isAuthenticated()) {
@@ -148,20 +157,24 @@ export default function Login() {
         setError('')
 
         try {
+            console.log('Starting Google OAuth flow...')
             const response = await AuthService.loginWithGoogle()
 
             if (response.cancelled) {
+                console.log('Google sign-in cancelled by user')
                 setLoading(false)
                 return
             }
 
             if (response.pending) {
                 // Redirect flow initiated
+                console.log('Google OAuth redirect initiated')
                 toast.info('Redirecting to Google...')
                 return
             }
 
             if (!response.success) {
+                console.error('Google sign-in failed:', response.error)
                 setError(response.error?.message || 'Google sign-in failed')
                 setLoading(false)
                 return
@@ -328,6 +341,7 @@ export default function Login() {
                                     type="submit"
                                     disabled={loading || !formData.email || !formData.password}
                                     className="group relative w-full flex justify-center py-2.5 sm:py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-light focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary focus:ring-offset-gray-950 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                    style={{ touchAction: 'manipulation' }}
                                 >
                                     {loading ? (
                                         <>
@@ -373,6 +387,7 @@ export default function Login() {
                                 type="button"
                                 disabled={loading}
                                 className="w-full flex justify-center items-center gap-3 px-4 py-2.5 sm:py-3 border border-gray-700 rounded-lg shadow-sm text-sm font-medium text-gray-300 bg-gray-900/50 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-gray-950 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                style={{ touchAction: 'manipulation' }}
                             >
                                 {loading ? (
                                     <svg className="animate-spin h-4 w-4 sm:h-5 sm:w-5 text-gray-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

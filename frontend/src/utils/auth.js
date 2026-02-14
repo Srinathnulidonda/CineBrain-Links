@@ -1,4 +1,4 @@
-// src/utils/auth.js - PRODUCTION GRADE FIX
+// src/utils/auth.js - PRODUCTION GRADE FIX WITH MOBILE OPTIMIZATION
 import {
     getAuth,
     signInWithEmailAndPassword,
@@ -276,32 +276,43 @@ const initializeAuth = async () => {
                     console.log('🔄 Redirect sign-in completed')
                     await handleSuccessfulAuth(result.user)
 
+                    // Clear redirect state
                     if (hasSessionStorage) {
                         sessionStorage.removeItem('auth_redirect_pending')
+                        sessionStorage.removeItem('auth_redirect_timestamp')
                     }
 
+                    // Dispatch success event for mobile handling
                     window.dispatchEvent(new CustomEvent('auth-redirect-success', {
-                        detail: { user: currentUser }
+                        detail: {
+                            user: currentUser,
+                            isMobile: /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+                        }
                     }))
                 }
             } catch (redirectError) {
+                console.error('Redirect error:', redirectError)
+
+                // Clear redirect state on any error
+                if (hasSessionStorage) {
+                    sessionStorage.removeItem('auth_redirect_pending')
+                    sessionStorage.removeItem('auth_redirect_timestamp')
+                }
+
+                // Handle specific mobile-related errors
                 if (redirectError.code === 'auth/missing-initial-state' ||
                     redirectError.code === 'auth/web-storage-unsupported') {
-                    console.warn('⚠️ Redirect state issue, checking current auth')
+                    console.warn('⚠️ Mobile redirect state issue, checking current auth')
 
-                    // Give Firebase more time to restore auth state
-                    await new Promise(resolve => setTimeout(resolve, 2000))
+                    // Give Firebase more time to restore auth state on mobile
+                    await new Promise(resolve => setTimeout(resolve, 3000))
 
                     if (auth.currentUser) {
                         console.log('✅ Found authenticated user after delay')
                         await handleSuccessfulAuth(auth.currentUser)
                     }
                 } else if (redirectError.code !== 'auth/no-auth-event') {
-                    console.error('Redirect error:', redirectError)
-                }
-
-                if (hasSessionStorage) {
-                    sessionStorage.removeItem('auth_redirect_pending')
+                    console.error('Unexpected redirect error:', redirectError)
                 }
             }
 
@@ -625,28 +636,62 @@ export const AuthService = {
                 console.warn('Failed to set persistence for Google login')
             }
 
-            // Detect if we should use redirect
-            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+            // ENHANCED: Mobile detection and OAuth strategy
+            const isMobile = /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+            const isTablet = /iPad|Android.*(?=.*Tablet)|(?=.*Android)(?=.*(?:Nexus [7-9]|Nexus 10))/i.test(navigator.userAgent)
+            const isMobileBrowser = isMobile || isTablet
             const hasStorageIssues = !hasSessionStorage || !hasLocalStorage
             const isIframe = window !== window.parent
             const isPrivateBrowsing = !hasLocalStorage && hasSessionStorage
+            const isSafariMobile = /iPhone|iPad|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent) && !/CriOS|FxiOS/.test(navigator.userAgent)
 
-            // Check for COOP issues
+            // Check for COOP issues more thoroughly
             let hasCOOPIssues = false
             try {
+                // Test if we can access window properties that COOP would block
                 hasCOOPIssues = window.crossOriginIsolated === true
             } catch (e) {
                 // Can't detect, assume false
             }
 
-            const shouldUseRedirect = forceRedirect || isMobile || hasStorageIssues ||
-                isIframe || hasCOOPIssues || isPrivateBrowsing
+            // Enhanced mobile detection for OAuth strategy
+            const shouldUseRedirect = forceRedirect ||
+                isMobileBrowser ||
+                hasStorageIssues ||
+                isIframe ||
+                hasCOOPIssues ||
+                isPrivateBrowsing ||
+                isSafariMobile ||
+                // Force redirect if viewport is mobile-sized
+                (window.innerWidth <= 768 && window.innerHeight <= 1024)
+
+            console.log('OAuth Strategy Decision:', {
+                isMobile: isMobileBrowser,
+                shouldUseRedirect,
+                viewportSize: `${window.innerWidth}x${window.innerHeight}`,
+                userAgent: navigator.userAgent.substring(0, 50) + '...',
+                reason: isMobileBrowser ? 'mobile_device' :
+                    hasCOOPIssues ? 'coop_policy' :
+                        hasStorageIssues ? 'storage_issues' :
+                            isIframe ? 'iframe_context' :
+                                'default'
+            })
 
             if (shouldUseRedirect) {
-                console.log('Using redirect flow for Google sign-in')
+                console.log('Using redirect flow for Google sign-in (Mobile optimized)')
+
+                // Store state for redirect handling
                 if (hasSessionStorage) {
                     sessionStorage.setItem('auth_redirect_pending', 'true')
+                    sessionStorage.setItem('auth_redirect_timestamp', Date.now().toString())
                 }
+
+                // Configure provider for redirect
+                googleProvider.setCustomParameters({
+                    prompt: 'select_account',
+                    display: isMobileBrowser ? 'touch' : 'popup'
+                })
+
                 await signInWithRedirect(auth, googleProvider)
                 return {
                     success: true,
@@ -655,8 +700,15 @@ export const AuthService = {
                 }
             }
 
-            // Try popup
+            // Try popup with enhanced mobile handling
             try {
+                // Configure provider for popup
+                googleProvider.setCustomParameters({
+                    prompt: 'select_account',
+                    display: 'popup'
+                })
+
+                console.log('Attempting popup flow...')
                 const userCredential = await signInWithPopup(auth, googleProvider)
                 const userData = await handleSuccessfulAuth(userCredential.user)
 
@@ -669,17 +721,22 @@ export const AuthService = {
                     message: 'Welcome!'
                 }
             } catch (popupError) {
-                // Fallback to redirect if popup fails
+                console.warn('Popup failed:', popupError.code, popupError.message)
+
+                // Enhanced popup error handling
                 if (popupError.code === 'auth/popup-blocked' ||
                     popupError.code === 'auth/cancelled-popup-request' ||
-                    popupError.code === 'auth/popup-closed-by-user') {
+                    popupError.code === 'auth/popup-closed-by-user' ||
+                    popupError.message.includes('popup') ||
+                    popupError.message.includes('window.closed') ||
+                    popupError.message.includes('Cross-Origin-Opener-Policy')) {
 
                     if (popupError.code === 'auth/popup-closed-by-user') {
                         return { success: false, cancelled: true }
                     }
 
-                    console.log('Popup failed, using redirect')
-                    return this.loginWithGoogle(true)
+                    console.log('Popup blocked or failed, falling back to redirect')
+                    return this.loginWithGoogle(true) // Force redirect
                 }
 
                 throw popupError
@@ -690,6 +747,16 @@ export const AuthService = {
             if (error.code === 'auth/popup-closed-by-user' ||
                 error.code === 'auth/cancelled-popup-request') {
                 return { success: false, cancelled: true }
+            }
+
+            // If it's a COOP or security error, try redirect
+            if (error.message && (
+                error.message.includes('Cross-Origin-Opener-Policy') ||
+                error.message.includes('window.closed') ||
+                error.message.includes('popup') ||
+                error.message.includes('SecurityError'))) {
+                console.log('Security policy blocking popup, using redirect')
+                return this.loginWithGoogle(true)
             }
 
             return {
@@ -852,7 +919,9 @@ export const AuthService = {
             storageAvailable: {
                 local: hasLocalStorage,
                 session: hasSessionStorage
-            }
+            },
+            isMobile: /iPhone|iPad|iPod|Android/i.test(navigator.userAgent),
+            viewport: `${window.innerWidth}x${window.innerHeight}`
         }
 
         console.log('🔍 Auth Debug Info:', debugInfo)
