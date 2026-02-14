@@ -1,0 +1,238 @@
+==> Running 'gunicorn run:app'
+Extensions initialized successfully
+2026-02-14 14:54:22,123 - app - INFO - Extensions initialized successfully
+Database initialization attempt 1 failed: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-14 14:54:42,357 - app - ERROR - Database initialization attempt 1 failed: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Retrying in 2 seconds...
+2026-02-14 14:54:42,357 - app - INFO - Retrying in 2 seconds...
+Database initialization attempt 2 failed: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-14 14:55:04,384 - app - ERROR - Database initialization attempt 2 failed: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Retrying in 4 seconds...
+2026-02-14 14:55:04,386 - app - INFO - Retrying in 4 seconds...
+Database initialization attempt 3 failed: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-14 14:55:28,401 - app - ERROR - Database initialization attempt 3 failed: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Database initialization failed after all retries
+2026-02-14 14:55:28,401 - app - CRITICAL - Database initialization failed after all retries
+Checking for database migrations...
+2026-02-14 14:55:28,401 - app - INFO - Checking for database migrations...
+Advisory lock not supported: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-14 14:55:48,443 - app.migrations.manager - WARNING - Advisory lock not supported: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Failed to create migrations table: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-14 14:56:08,475 - app.migrations.manager - ERROR - Failed to create migrations table: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Migration process failed: Cannot create migrations table: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-14 14:56:08,475 - app.migrations.manager - ERROR - Migration process failed: Cannot create migrations table: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Migration failed: Cannot create migrations table: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-14 14:56:08,475 - app - ERROR - Migration failed: Cannot create migrations table: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Firebase Admin SDK initialized
+2026-02-14 14:56:12,717 - app - INFO - Firebase Admin SDK initialized
+Auth blueprint registered
+2026-02-14 14:56:12,720 - app - INFO - Auth blueprint registered
+Links blueprint registered
+2026-02-14 14:56:12,831 - app - INFO - Links blueprint registered
+Dashboard blueprint registered
+2026-02-14 14:56:12,849 - app - INFO - Dashboard blueprint registered
+Redirect blueprint registered
+2026-02-14 14:56:12,922 - app - INFO - Redirect blueprint registered
+Folders blueprint registered
+2026-02-14 14:56:12,935 - app - INFO - Folders blueprint registered
+Tags blueprint registered
+2026-02-14 14:56:13,021 - app - INFO - Tags blueprint registered
+Savlink backend initialized in production mode
+2026-02-14 14:56:13,024 - app - INFO - Savlink backend initialized in production mode
+[2026-02-14 14:56:13 +0000] [40] [INFO] Starting gunicorn 25.1.0
+[2026-02-14 14:56:13 +0000] [40] [INFO] Listening at: http://0.0.0.0:10000 (40)
+[2026-02-14 14:56:13 +0000] [40] [INFO] Using worker: sync
+[2026-02-14 14:56:13 +0000] [40] [INFO] Control socket listening at /opt/render/project/src/server/gunicorn.ctl
+
+
+
+==> Running 'gunicorn run:app'
+Extensions initialized successfully
+2026-02-14 14:54:22,123 - app - INFO - Extensions initialized successfully
+Database initialization attempt 1 failed: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-14 14:54:42,357 - app - ERROR - Database initialization attempt 1 failed: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Retrying in 2 seconds...
+2026-02-14 14:54:42,357 - app - INFO - Retrying in 2 seconds...
+Database initialization attempt 2 failed: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-14 14:55:04,384 - app - ERROR - Database initialization attempt 2 failed: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Retrying in 4 seconds...
+2026-02-14 14:55:04,386 - app - INFO - Retrying in 4 seconds...
+Database initialization attempt 3 failed: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-14 14:55:28,401 - app - ERROR - Database initialization attempt 3 failed: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Database initialization failed after all retries
+2026-02-14 14:55:28,401 - app - CRITICAL - Database initialization failed after all retries
+Checking for database migrations...
+2026-02-14 14:55:28,401 - app - INFO - Checking for database migrations...
+Advisory lock not supported: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-14 14:55:48,443 - app.migrations.manager - WARNING - Advisory lock not supported: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Failed to create migrations table: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-14 14:56:08,475 - app.migrations.manager - ERROR - Failed to create migrations table: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Migration process failed: Cannot create migrations table: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-14 14:56:08,475 - app.migrations.manager - ERROR - Migration process failed: Cannot create migrations table: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Migration failed: Cannot create migrations table: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-02-14 14:56:08,475 - app - ERROR - Migration failed: Cannot create migrations table: (psycopg2.OperationalError) connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (13.213.241.248), port 5432 failed: timeout expired
+connection to server at "aws-1-ap-southeast-1.pooler.supabase.com" (3.1.167.181), port 5432 failed: timeout expired
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Firebase Admin SDK initialized
+2026-02-14 14:56:12,717 - app - INFO - Firebase Admin SDK initialized
+Auth blueprint registered
+2026-02-14 14:56:12,720 - app - INFO - Auth blueprint registered
+Links blueprint registered
+2026-02-14 14:56:12,831 - app - INFO - Links blueprint registered
+Dashboard blueprint registered
+2026-02-14 14:56:12,849 - app - INFO - Dashboard blueprint registered
+Redirect blueprint registered
+2026-02-14 14:56:12,922 - app - INFO - Redirect blueprint registered
+Folders blueprint registered
+2026-02-14 14:56:12,935 - app - INFO - Folders blueprint registered
+Tags blueprint registered
+2026-02-14 14:56:13,021 - app - INFO - Tags blueprint registered
+Savlink backend initialized in production mode
+2026-02-14 14:56:13,024 - app - INFO - Savlink backend initialized in production mode
+[2026-02-14 14:56:13 +0000] [40] [INFO] Starting gunicorn 25.1.0
+[2026-02-14 14:56:13 +0000] [40] [INFO] Listening at: http://0.0.0.0:10000 (40)
+[2026-02-14 14:56:13 +0000] [40] [INFO] Using worker: sync
+[2026-02-14 14:56:13 +0000] [40] [INFO] Control socket listening at /opt/render/project/src/server/gunicorn.ctl
+==> Running 'gunicorn run:app'
+Extensions initialized successfully
+2026-02-14 15:02:21,155 - app - INFO - Extensions initialized successfully
+Database connection successful
+2026-02-14 15:02:24,290 - app - INFO - Database connection successful
+Database tables verified/created
+2026-02-14 15:02:26,007 - app - INFO - Database tables verified/created
+Database tables: users, emergency_tokens, schema_migrations, links, folders, tags, link_tags
+2026-02-14 15:02:26,853 - app - INFO - Database tables: users, emergency_tokens, schema_migrations, links, folders, tags, link_tags
+Checking for database migrations...
+2026-02-14 15:02:26,853 - app - INFO - Checking for database migrations...
+Migration lock acquired
+2026-02-14 15:02:27,379 - app.migrations.manager - INFO - Migration lock acquired
+Migrations table schema_migrations ensured
+2026-02-14 15:02:27,742 - app.migrations.manager - INFO - Migrations table schema_migrations ensured
+Running migration 001_add_emergency_enabled: Add emergency_enabled column to users table
+2026-02-14 15:02:28,254 - app.migrations.manager - INFO - Running migration 001_add_emergency_enabled: Add emergency_enabled column to users table
+emergency_enabled column already exists - skipping
+2026-02-14 15:02:28,652 - app.migrations.versions.v001_add_emergency_enabled - INFO - emergency_enabled column already exists - skipping
+Migration 001_add_emergency_enabled skipped (validation returned False)
+2026-02-14 15:02:28,652 - app.migrations.manager - INFO - Migration 001_add_emergency_enabled skipped (validation returned False)
+Running migration 002_create_links_table: Create links table for saved and shortened links
+2026-02-14 15:02:28,652 - app.migrations.manager - INFO - Running migration 002_create_links_table: Create links table for saved and shortened links
+links table already exists - verifying columns
+2026-02-14 15:02:28,821 - app.migrations.versions.v002_create_links_table - INFO - links table already exists - verifying columns
+Migration 002_create_links_table skipped (validation returned False)
+2026-02-14 15:02:30,700 - app.migrations.manager - INFO - Migration 002_create_links_table skipped (validation returned False)
+Running migration 003_create_folders_table: Create folders table for link organization
+2026-02-14 15:02:30,700 - app.migrations.manager - INFO - Running migration 003_create_folders_table: Create folders table for link organization
+folders table already exists - skipping
+2026-02-14 15:02:30,869 - app.migrations.versions.v003_create_folders_table - INFO - folders table already exists - skipping
+Migration 003_create_folders_table skipped (validation returned False)
+2026-02-14 15:02:30,869 - app.migrations.manager - INFO - Migration 003_create_folders_table skipped (validation returned False)
+Running migration 004_create_tags_tables: Create tags and link_tags tables for link tagging
+2026-02-14 15:02:30,870 - app.migrations.manager - INFO - Running migration 004_create_tags_tables: Create tags and link_tags tables for link tagging
+tags and link_tags tables already exist - skipping
+2026-02-14 15:02:31,208 - app.migrations.versions.v004_create_tags_tables - INFO - tags and link_tags tables already exist - skipping
+Migration 004_create_tags_tables skipped (validation returned False)
+2026-02-14 15:02:31,208 - app.migrations.manager - INFO - Migration 004_create_tags_tables skipped (validation returned False)
+Migration lock released
+2026-02-14 15:02:31,378 - app.migrations.manager - INFO - Migration lock released
+Database schema is up to date
+2026-02-14 15:02:31,378 - app - INFO - Database schema is up to date
+Firebase Admin SDK initialized
+2026-02-14 15:02:35,860 - app - INFO - Firebase Admin SDK initialized
+Auth blueprint registered
+2026-02-14 15:02:36,031 - app - INFO - Auth blueprint registered
+Links blueprint registered
+2026-02-14 15:02:36,049 - app - INFO - Links blueprint registered
+Dashboard blueprint registered
+2026-02-14 15:02:36,055 - app - INFO - Dashboard blueprint registered
+Redirect blueprint registered
+2026-02-14 15:02:36,061 - app - INFO - Redirect blueprint registered
+Folders blueprint registered
+2026-02-14 15:02:36,150 - app - INFO - Folders blueprint registered
+Tags blueprint registered
+2026-02-14 15:02:36,158 - app - INFO - Tags blueprint registered
+Savlink backend initialized in production mode
+2026-02-14 15:02:36,160 - app - INFO - Savlink backend initialized in production mode
+[2026-02-14 15:02:36 +0000] [41] [INFO] Starting gunicorn 25.1.0
+[2026-02-14 15:02:36 +0000] [41] [INFO] Listening at: http://0.0.0.0:10000 (41)
+[2026-02-14 15:02:36 +0000] [41] [INFO] Using worker: sync
+[2026-02-14 15:02:36 +0000] [41] [INFO] Control socket listening at /opt/render/project/src/server/gunicorn.ctl
+[2026-02-14 15:02:36 +0000] [43] [INFO] Booting worker with pid: 43
+127.0.0.1 - - [14/Feb/2026:15:02:47 +0000] "OPTIONS /auth/me HTTP/1.1" 200 0 "http://localhost:5173/" "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Mobile Safari/537.36"
+Firebase auth successful for uid: b0Jxiz6lGBR0E5jvH01e92xkFNJ3
+2026-02-14 15:02:49,130 - app.auth.middleware - INFO - Firebase auth successful for uid: b0Jxiz6lGBR0E5jvH01e92xkFNJ3
+Provisioning user: uid=b0Jxiz6lGBR0E5jvH01e92xkFNJ3, email=srinathnulidonda@gmail.com
+2026-02-14 15:02:49,131 - app.auth.provisioning - INFO - Provisioning user: uid=b0Jxiz6lGBR0E5jvH01e92xkFNJ3, email=srinathnulidonda@gmail.com
+Updated existing user: b0Jxiz6lGBR0E5jvH01e92xkFNJ3
+2026-02-14 15:02:49,769 - app.auth.provisioning - INFO - Updated existing user: b0Jxiz6lGBR0E5jvH01e92xkFNJ3
+127.0.0.1 - - [14/Feb/2026:15:02:50 +0000] "GET /auth/me HTTP/1.1" 200 284 "http://localhost:5173/" "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Mobile Safari/537.36"
+127.0.0.1 - - [14/Feb/2026:15:02:51 +0000] "OPTIONS /api/dashboard/links?view=all&limit=20 HTTP/1.1" 200 0 "http://localhost:5173/" "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Mobile Safari/537.36"
+127.0.0.1 - - [14/Feb/2026:15:02:51 +0000] "OPTIONS /api/dashboard/stats HTTP/1.1" 200 0 "http://localhost:5173/" "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Mobile Safari/537.36"
+Firebase auth successful for uid: b0Jxiz6lGBR0E5jvH01e92xkFNJ3
+2026-02-14 15:02:52,272 - app.auth.middleware - INFO - Firebase auth successful for uid: b0Jxiz6lGBR0E5jvH01e92xkFNJ3
+Provisioning user: uid=b0Jxiz6lGBR0E5jvH01e92xkFNJ3, email=srinathnulidonda@gmail.com
+2026-02-14 15:02:52,272 - app.auth.provisioning - INFO - Provisioning user: uid=b0Jxiz6lGBR0E5jvH01e92xkFNJ3, email=srinathnulidonda@gmail.com
+Updated existing user: b0Jxiz6lGBR0E5jvH01e92xkFNJ3
+2026-02-14 15:02:52,779 - app.auth.provisioning - INFO - Updated existing user: b0Jxiz6lGBR0E5jvH01e92xkFNJ3
+127.0.0.1 - - [14/Feb/2026:15:02:54 +0000] "GET /api/dashboard/links?view=all&limit=20 HTTP/1.1" 200 2119 "http://localhost:5173/" "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Mobile Safari/537.36"
+Firebase auth successful for uid: b0Jxiz6lGBR0E5jvH01e92xkFNJ3
+2026-02-14 15:02:54,845 - app.auth.middleware - INFO - Firebase auth successful for uid: b0Jxiz6lGBR0E5jvH01e92xkFNJ3
+Provisioning user: uid=b0Jxiz6lGBR0E5jvH01e92xkFNJ3, email=srinathnulidonda@gmail.com
+2026-02-14 15:02:54,845 - app.auth.provisioning - INFO - Provisioning user: uid=b0Jxiz6lGBR0E5jvH01e92xkFNJ3, email=srinathnulidonda@gmail.com
+Updated existing user: b0Jxiz6lGBR0E5jvH01e92xkFNJ3
+2026-02-14 15:02:55,351 - app.auth.provisioning - INFO - Updated existing user: b0Jxiz6lGBR0E5jvH01e92xkFNJ3
+127.0.0.1 - - [14/Feb/2026:15:02:57 +0000] "GET /api/dashboard/stats HTTP/1.1" 200 128 "http://localhost:5173/" "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Mobile Safari/537.36"
+Menu
